@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Customer, Transaction, TransactionType } from '../types';
 import { formatCurrency } from '../utils/formatters';
@@ -117,13 +118,13 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
               placeholder="Cari nama nasabah..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white shadow-sm border border-gray-100 rounded-full py-3 pl-11 pr-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              className="w-full bg-card shadow-sm border border-gray-100 rounded-full py-3 pl-11 pr-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
             />
           </div>
           <div className="relative" ref={sortMenuRef}>
             <button 
                 onClick={() => setIsSortMenuOpen(prev => !prev)}
-                className="w-12 h-12 flex-shrink-0 bg-white shadow-sm border border-gray-100 rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors"
+                className="w-12 h-12 flex-shrink-0 bg-card shadow-sm border border-gray-100 rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors"
                 aria-label="Urutkan nasabah"
                 title="Urutkan"
             >
@@ -132,7 +133,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
                 </svg>
             </button>
             {isSortMenuOpen && (
-                <div className="absolute right-0 top-14 mt-1 w-56 bg-white border border-gray-100 rounded-2xl shadow-xl z-20 overflow-hidden animate-fadeInUp" style={{animationDuration: '200ms'}}>
+                <div className="absolute right-0 top-14 mt-1 w-56 bg-card border border-gray-100 rounded-xl shadow-xl z-20 overflow-hidden animate-fadeInUp" style={{animationDuration: '200ms'}}>
                     <div className="p-1">
                         {sortOptions.map(option => (
                             <button
@@ -164,7 +165,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
               className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 border flex-shrink-0 ${
                 selectedLocation === location
                   ? 'bg-[#C7FF24] text-black border-transparent shadow-md'
-                  : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'
+                  : 'bg-card border-gray-100 text-gray-500 hover:bg-gray-50'
               }`}
             >
               {location}
@@ -176,7 +177,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
       <div className="space-y-3">
         {filteredCustomers.length > 0 ? (
           filteredCustomers.map(customer => (
-            <button key={customer.id} onClick={() => onCustomerSelect(customer)} className="w-full text-left bg-white shadow-sm border border-gray-100 rounded-3xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
+            <button key={customer.id} onClick={() => onCustomerSelect(customer)} className="w-full text-left bg-card shadow-sm border border-gray-100 rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
               <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
                 <span className="text-xl font-bold text-gray-700">{customer.name[0]?.toUpperCase()}</span>
               </div>
@@ -192,7 +193,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
             </button>
           ))
         ) : (
-          <div className="bg-white shadow-sm border border-gray-100 rounded-3xl p-6 text-center text-gray-400">
+          <div className="bg-card shadow-sm border border-gray-100 rounded-2xl p-6 text-center text-gray-400">
             <p>{searchQuery || selectedLocation !== 'Semua' ? 'Nasabah tidak ditemukan.' : 'Belum ada nasabah terdaftar.'}</p>
           </div>
         )}

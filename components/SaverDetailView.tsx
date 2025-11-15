@@ -17,7 +17,7 @@ interface SaverDetailViewProps {
 const BentoCard: React.FC<{ children: React.ReactNode; className?: string; span?: string; onClick?: () => void }> = ({ children, className = '', span = 'col-span-4', onClick }) => (
     <div 
         onClick={onClick}
-        className={`shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-gray-100 rounded-3xl p-5 flex flex-col justify-center ${span} ${className.includes('bg-') ? '' : 'bg-white'} ${className} ${onClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+        className={`shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-gray-100 rounded-2xl p-5 flex flex-col justify-center ${span} ${className.includes('bg-') ? '' : 'bg-card'} ${className} ${onClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
     >
         {children}
     </div>
@@ -73,9 +73,9 @@ const SaverDetailView: React.FC<SaverDetailViewProps> = ({ customer, transaction
     }
 
     return (
-        <div className="relative flex flex-col h-full text-gray-900 overflow-hidden bg-gray-50">
+        <div className="relative flex flex-col h-full text-gray-900 overflow-hidden bg-app-bg">
              {/* Simple Header */}
-            <header className="bg-white/80 backdrop-blur-md p-4 flex items-center justify-center z-10 sticky top-0">
+            <header className="bg-app-bg/80 backdrop-blur-md p-4 flex items-center justify-center z-10 sticky top-0">
                 <h2 className="text-lg font-bold text-center">Detail Penabung</h2>
             </header>
 
@@ -161,7 +161,7 @@ const SaverDetailView: React.FC<SaverDetailViewProps> = ({ customer, transaction
 
                     {/* History Section */}
                     <div className="pt-2">
-                        <div className="bg-white shadow-sm rounded-3xl overflow-hidden border border-gray-100">
+                        <div className="bg-card shadow-sm rounded-2xl overflow-hidden border border-gray-100">
                              <div className="p-5 border-b border-gray-100">
                                 <h3 className="text-lg font-bold text-gray-900">Riwayat Tabungan</h3>
                             </div>

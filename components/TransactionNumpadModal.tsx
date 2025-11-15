@@ -209,17 +209,17 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
 
     return (
         <>
-            <div className={`fixed inset-0 z-50 flex flex-col bg-gray-100 transition-transform duration-300 ease-in-out ${isVisible && !isClosing ? 'translate-y-0' : 'translate-y-full'}`}>
+            <div className={`fixed inset-0 z-50 flex flex-col bg-app-bg transition-transform duration-300 ease-in-out ${isVisible && !isClosing ? 'translate-y-0' : 'translate-y-full'}`}>
                 <div className="relative w-full h-full overflow-hidden">
                     <div className={`absolute inset-0 flex transition-transform duration-300 ease-in-out ${isDetailViewOpen ? '-translate-x-full' : 'translate-x-0'}`}>
                         {/* Numpad View */}
-                        <div className="w-full h-full flex-shrink-0 flex flex-col bg-gray-100">
+                        <div className="w-full h-full flex-shrink-0 flex flex-col bg-app-bg">
                             {/* Header / "Send to" Section */}
                             <div className="pt-2 px-6 pb-2">
                                 <div className="flex items-center justify-between mb-2">
                                     <button 
                                         onClick={handleClose} 
-                                        className="w-10 h-10 flex items-center justify-center bg-white border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
+                                        className="w-10 h-10 flex items-center justify-center bg-card border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
                                         aria-label="Kembali"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -228,7 +228,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                     </button>
                                 </div>
                                 
-                                <div className="bg-white rounded-3xl p-4 shadow-sm flex items-center justify-between">
+                                <div className="bg-card rounded-2xl p-4 shadow-sm flex items-center justify-between">
                                     <div className="flex items-center gap-3 flex-1">
                                         <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 border border-gray-200">
                                             <span className="text-xl font-bold text-gray-700">{customer.name[0]?.toUpperCase()}</span>
@@ -264,9 +264,9 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                             </div>
 
                             {/* Numpad & Method Container */}
-                            <div className="bg-white rounded-[2.5rem] mx-4 mb-4 px-8 pt-6 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+                            <div className="bg-card rounded-3xl mx-4 mb-4 px-8 pt-6 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
                                 {/* Payment Method "Card" */}
-                                <div className="bg-gray-50 rounded-2xl p-4 mb-4 flex items-center justify-between border border-gray-100">
+                                <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center justify-between border border-gray-100">
                                     <div className="flex items-center gap-3">
                                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'Cash' ? 'bg-green-100' : 'bg-blue-100'}`}>
                                             {paymentMethod === 'Cash' ? (
@@ -282,7 +282,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                     </div>
                                     <button 
                                         onClick={togglePaymentMethod} 
-                                        className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-medium px-3 py-1.5 rounded-full transition-colors shadow-sm"
+                                        className="bg-card border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-medium px-3 py-1.5 rounded-full transition-colors shadow-sm"
                                     >
                                         Ganti
                                     </button>
@@ -302,7 +302,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                         </div>
 
                         {/* Detail View (Side Panel) */}
-                        <div className="w-full h-full flex-shrink-0 bg-gray-50">
+                        <div className="w-full h-full flex-shrink-0 bg-app-bg">
                             {mode === 'repayment' ? (
                                 <CustomerDetailView 
                                     customer={customer}
@@ -396,4 +396,3 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
 };
 
 export default TransactionNumpadModal;
-    

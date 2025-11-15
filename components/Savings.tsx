@@ -41,7 +41,7 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#C7FF24] shadow-sm rounded-3xl p-6 text-center">
+      <div className="bg-[#C7FF24] shadow-sm rounded-2xl p-6 text-center">
         <h4 className="text-black text-sm font-medium mb-2">Total Semua Tabungan</h4>
         <p className="text-4xl font-bold text-black">{formatCurrency(totalSavings)}</p>
       </div>
@@ -49,7 +49,7 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
       <div className="space-y-3">
         {savers.length > 0 ? (
           savers.map(saver => (
-            <button key={saver.customer.id} onClick={() => onSaverSelect(saver.customer)} className="w-full text-left bg-white shadow-sm border border-gray-100 rounded-3xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
+            <button key={saver.customer.id} onClick={() => onSaverSelect(saver.customer)} className="w-full text-left bg-card shadow-sm border border-gray-100 rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
               <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
                 <span className="text-xl font-bold text-gray-700">{saver.customer.name[0]?.toUpperCase()}</span>
               </div>
@@ -65,7 +65,7 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
             </button>
           ))
         ) : (
-          <div className="bg-white shadow-sm border border-gray-100 rounded-3xl p-6 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
+          <div className="bg-card shadow-sm border border-gray-100 rounded-2xl p-6 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5v9a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 16.5v-9A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5h4.5a1.5 1.5 0 011.5 1.5v.75a1.5 1.5 0 01-1.5 1.5H15V10.5z" />

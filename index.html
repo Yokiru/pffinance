@@ -7,19 +7,21 @@
     <title>PJFINANCE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Stack+Sans+Notch:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              sans: ['"Public Sans"', 'sans-serif'],
+              sans: ['"Stack Sans Notch"', '"Space Grotesk"', 'sans-serif'],
             },
             colors: {
               'accent-lime': '#65a30d', // Darkened for light mode
               'accent-green': '#059669', // Darkened for light mode
               'accent-red': '#dc2626', // Darkened for light mode
+              'card': '#F4F6F8',
+              'app-bg': '#FEFFFF',
               primary: {
                 '50': '#eff6ff',
                 '100': '#dbeafe',
@@ -40,10 +42,9 @@
     </script>
     <style>
       body {
-        background: linear-gradient(180deg, #EEF0F2 0%, #CBCDD1 100%);
+        background-color: #FEFFFF;
         min-height: 100vh;
         margin: 0;
-        background-attachment: fixed;
       }
       .no-scrollbar::-webkit-scrollbar {
         display: none;

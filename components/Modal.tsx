@@ -32,7 +32,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, content
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md m-4 overflow-hidden"
+        className="bg-card rounded-2xl shadow-2xl w-full max-w-md m-4 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
