@@ -61,8 +61,8 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-base text-gray-900 truncate">{saver.customer.name}</p>
-                <p className="text-xs font-medium text-gray-600">
-                  Penabung Aktif
+                <p className="text-xs font-medium text-gray-500">
+                  {saver.customer.location}
                 </p>
               </div>
               <div className="text-right">

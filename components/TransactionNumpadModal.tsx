@@ -87,7 +87,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
     
     const numericAmount = useMemo(() => parseFloat(amount.replace(/,/g, '') || '0'), [amount]);
 
-    const { remainingLoan, totalSavings } = useMemo(() => {
+    const { remainingLoan, totalSavings, installmentAmount } = useMemo(() => {
         const customerTransactions = transactions.filter(t => t.customerId === customer.id);
         
         const totalRepayments = customerTransactions
@@ -107,7 +107,16 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
         const totalLoanWithInterest = customer.loanAmount * (1 + customer.interestRate / 100);
         const remaining = totalLoanWithInterest - totalRepayments;
 
-        return { remainingLoan: remaining, totalSavings: netSavings };
+        // Calculate installment amount (Setoran)
+        const installment = customer.installments > 0 
+            ? totalLoanWithInterest / customer.installments 
+            : 0;
+
+        return { 
+            remainingLoan: remaining, 
+            totalSavings: netSavings,
+            installmentAmount: installment
+        };
     }, [transactions, customer]);
 
     const handleSubmit = () => {
@@ -237,7 +246,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                             <p className="font-bold text-gray-900">{customer.name}</p>
                                             <p className="text-xs text-gray-500">
                                                {mode === 'repayment' 
-                                                    ? `Sisa Tagihan: ${formatCurrency(Math.max(0, remainingLoan))}` 
+                                                    ? `Setoran: ${formatCurrency(installmentAmount)}` 
                                                     : mode === 'savings' ? 'Tambah Tabungan' : 'Tarik Tunai'}
                                             </p>
                                         </div>

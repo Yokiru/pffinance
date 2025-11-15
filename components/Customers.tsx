@@ -183,8 +183,8 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-base text-gray-900 truncate">{customer.name}</p>
-                <p className={`text-xs font-medium ${customer.status === 'aktif' ? 'text-gray-600' : 'text-gray-500'}`}>
-                  {customer.status === 'aktif' ? 'Pinjaman Aktif' : 'Lunas'}
+                <p className="text-xs font-medium text-gray-500">
+                  {customer.location}
                 </p>
               </div>
               <div className="text-right">
