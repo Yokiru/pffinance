@@ -13,6 +13,7 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
   const { totalSavings, savers } = useMemo(() => {
     const savingsByCustomer = new Map<string, number>();
     
+    // Calculate balance based on transactions
     transactions.forEach(t => {
         const currentBalance = savingsByCustomer.get(t.customerId) || 0;
         if (t.type === TransactionType.SAVINGS) {
@@ -22,15 +23,20 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
         }
     });
 
+    // Create list but ONLY include customers who are explicitly 'savers' or have specific saving activity
     const saverList = Array.from(savingsByCustomer.entries()).map(([customerId, totalAmount]) => {
         return {
             customer: customerMap.get(customerId)!,
             totalSavings: totalAmount,
         };
-    }).filter(item => item.customer && item.totalSavings > 0) // ensure customer exists and has savings
-      .sort((a, b) => a.customer.name.localeCompare(b.customer.name)); 
+    }).filter(item => 
+        item.customer && 
+        item.customer.role === 'saver' && // Only show explicit savers
+        item.totalSavings >= 0 // Show even if 0 balance, but not negative (sanity check)
+    ).sort((a, b) => a.customer.name.localeCompare(b.customer.name)); 
 
-    const total = Array.from(savingsByCustomer.values()).reduce((sum, amount) => sum + amount, 0);
+    // Calculate total of displayed savers only
+    const total = saverList.reduce((sum, item) => sum + item.totalSavings, 0);
 
     return {
       totalSavings: total,

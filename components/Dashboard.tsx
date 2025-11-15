@@ -172,7 +172,8 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         <span className="text-gray-400 font-medium">Cash</span>
                         <span className="font-bold text-white text-lg">{formatCurrency(breakdowns.totalUang.cash)}</span>
                     </div>
-                    <div className="flex justify-between items-center pt-1">
+                    {/* Removed pt-1 to make it symmetrical with pb-3 above (12px vs 12px via space-y-3) */}
+                    <div className="flex justify-between items-center">
                         <span className="text-gray-400 font-medium">Transfer</span>
                         <span className="font-bold text-white text-lg">{formatCurrency(breakdowns.totalUang.transfer)}</span>
                     </div>
@@ -196,12 +197,13 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         </div>
                     </div>
                     <h4 className="text-black/70 text-xs font-bold tracking-widest uppercase mb-4">UANG TAGIHAN</h4>
-                    <div className="text-sm space-y-3">
+                    {/* Changed space-y-3 to space-y-2 (8px gap) and removed pt-1 to match pb-2 (8px padding) */}
+                    <div className="text-sm space-y-2">
                         <div className="flex justify-between items-center border-b border-dashed border-black/10 pb-2">
                             <span className="text-black/60 font-medium">Cash</span>
                             <span className="font-bold text-black text-base">{formatCurrency(breakdowns.dailyRepayments.cash)}</span>
                         </div>
-                        <div className="flex justify-between items-center pt-1">
+                        <div className="flex justify-between items-center">
                             <span className="text-black/60 font-medium">Transfer</span>
                             <span className="font-bold text-black text-base">{formatCurrency(breakdowns.dailyRepayments.transfer)}</span>
                         </div>
@@ -221,12 +223,13 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         </div>
                     </div>
                     <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN</h4>
-                    <div className="text-sm space-y-3">
+                     {/* Changed space-y-3 to space-y-2 (8px gap) and removed pt-1 to match pb-2 (8px padding) */}
+                    <div className="text-sm space-y-2">
                          <div className="flex justify-between items-center border-b border-dashed border-white/20 pb-2">
                             <span className="text-gray-500 font-medium">Cash</span>
                             <span className="font-bold text-white text-base">{formatCurrency(breakdowns.dailySavings.cash)}</span>
                         </div>
-                        <div className="flex justify-between items-center pt-1">
+                        <div className="flex justify-between items-center">
                             <span className="text-gray-500 font-medium">Transfer</span>
                             <span className="font-bold text-white text-base">{formatCurrency(breakdowns.dailySavings.transfer)}</span>
                         </div>

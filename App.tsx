@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Customer, Transaction, TransactionType } from './types';
 import Dashboard from './components/Dashboard';
@@ -29,6 +30,8 @@ const mapCustomerFromDB = (c: any): Customer => ({
   interestRate: c.interest_rate,
   installments: c.installments,
   status: c.status,
+  // Fallback logic: if role doesn't exist yet, infer from loanAmount
+  role: c.role || (c.loan_amount === 0 ? 'saver' : 'borrower'),
 });
 
 const mapCustomerToDB = (c: Customer) => ({
@@ -41,6 +44,7 @@ const mapCustomerToDB = (c: Customer) => ({
   interest_rate: c.interestRate,
   installments: c.installments,
   status: c.status,
+  role: c.role,
 });
 
 const mapTransactionFromDB = (t: any): Transaction => ({
@@ -112,11 +116,12 @@ const App: React.FC = () => {
     return new Map(customers.map(c => [c.id, c]));
   }, [customers]);
   
-  const addCustomer = async (customerData: Omit<Customer, 'id' | 'status'>) => {
+  const addCustomer = async (customerData: Omit<Customer, 'id' | 'status' | 'role'>) => {
     const newCustomer: Customer = {
       ...customerData,
       id: `CUST-${new Date().getTime()}`,
       status: 'aktif',
+      role: 'borrower', // Explicitly set as borrower
     };
 
     const { error } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
@@ -143,6 +148,7 @@ const App: React.FC = () => {
       interestRate: 0,
       installments: 0,
       status: 'aktif',
+      role: 'saver', // Explicitly set as saver
     };
 
     const initialSavingTransaction: Omit<Transaction, 'id'> = {
@@ -342,7 +348,8 @@ const App: React.FC = () => {
         )}
         {activePage === 'customers' && (
           <Customers
-            customers={customers}
+            // Filter to show ONLY borrowers
+            customers={customers.filter(c => c.role === 'borrower')}
             transactions={transactions}
             onCustomerSelect={(customer) => {
                 setTransactionMode('repayment');

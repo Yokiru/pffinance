@@ -1,3 +1,4 @@
+
 export enum TransactionType {
   SAVINGS = 'Simpanan',
   LOAN = 'Pinjaman',
@@ -15,6 +16,7 @@ export interface Customer {
   interestRate: number;
   installments: number;
   status: 'aktif' | 'lunas';
+  role: 'borrower' | 'saver'; // Added role to distinguish types
 }
 
 export interface Transaction {
