@@ -12,12 +12,30 @@ interface SavingsProps {
 const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSelect }) => {
   const { totalSavings, savers } = useMemo(() => {
     const savingsByCustomer = new Map<string, number>();
+    const savedTodayByCustomer = new Map<string, number>();
     
+    // Helper to ensure accurate local date comparison (YYYY-MM-DD)
+    const toLocalYMD = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    const todayStr = toLocalYMD(new Date());
+    const checkIsToday = (dateStr: string) => {
+        return toLocalYMD(new Date(dateStr)) === todayStr;
+    };
+
     // Calculate balance based on transactions
     transactions.forEach(t => {
         const currentBalance = savingsByCustomer.get(t.customerId) || 0;
         if (t.type === TransactionType.SAVINGS) {
             savingsByCustomer.set(t.customerId, currentBalance + t.amount);
+            
+            if (checkIsToday(t.date)) {
+                savedTodayByCustomer.set(t.customerId, (savedTodayByCustomer.get(t.customerId) || 0) + t.amount);
+            }
         } else if (t.type === TransactionType.WITHDRAWAL) {
             savingsByCustomer.set(t.customerId, currentBalance - t.amount);
         }
@@ -28,6 +46,7 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
         return {
             customer: customerMap.get(customerId)!,
             totalSavings: totalAmount,
+            amountSavedToday: savedTodayByCustomer.get(customerId) || 0
         };
     }).filter(item => 
         item.customer && 
@@ -61,13 +80,18 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-base text-gray-900 truncate">{saver.customer.name}</p>
+                <p className="text-xs font-medium text-gray-500">{saver.customer.location}</p>
                 {saver.customer.phone && (
                      <p className="text-xs font-medium text-gray-400">{saver.customer.phone}</p>
                 )}
               </div>
               <div className="text-right flex flex-col items-end">
                 <p className="font-normal text-lg text-gray-900">{formatCurrency(saver.totalSavings)}</p>
-                <p className="text-xs font-medium text-gray-500">{saver.customer.location}</p>
+                {saver.amountSavedToday > 0 && (
+                    <p className="text-xs font-bold text-green-600 mt-0.5">
+                        + {formatCurrency(saver.amountSavedToday)}
+                    </p>
+                )}
               </div>
             </button>
           ))

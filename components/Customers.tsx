@@ -29,9 +29,36 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
   
   const customersWithLoanInfo = useMemo(() => {
     const transactionsByCustomer = new Map<string, number>();
+    const paidTodayAmountByCustomer = new Map<string, number>();
+    
+    // Helper to ensure accurate local date comparison (YYYY-MM-DD)
+    const toLocalYMD = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    const todayStr = toLocalYMD(new Date());
+    const checkIsToday = (dateStr: string) => {
+        return toLocalYMD(new Date(dateStr)) === todayStr;
+    };
+
+    const paidTodayIds = new Set<string>();
+    const loanedTodayIds = new Set<string>();
+
     transactions.forEach(t => {
       if (t.type === TransactionType.REPAYMENT) {
         transactionsByCustomer.set(t.customerId, (transactionsByCustomer.get(t.customerId) || 0) + t.amount);
+        
+        if (checkIsToday(t.date)) {
+            paidTodayIds.add(t.customerId);
+            paidTodayAmountByCustomer.set(t.customerId, (paidTodayAmountByCustomer.get(t.customerId) || 0) + t.amount);
+        }
+      } else if (t.type === TransactionType.LOAN) {
+        if (checkIsToday(t.date)) {
+            loanedTodayIds.add(t.customerId);
+        }
       }
     });
 
@@ -42,11 +69,17 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
 
       const isPaidOff = remainingLoan <= 0;
 
+      // Check if they have a LOAN transaction today OR if their profile loanDate is today (for new customers)
+      const hasLoanedToday = loanedTodayIds.has(customer.id) || customer.loanDate === todayStr;
+
       return {
         ...customer,
         status: (isPaidOff ? 'lunas' : 'aktif') as Customer['status'],
         remainingLoan: Math.max(0, remainingLoan),
         totalLoanWithInterest,
+        hasPaidToday: paidTodayIds.has(customer.id),
+        amountPaidToday: paidTodayAmountByCustomer.get(customer.id) || 0,
+        hasLoanedToday: hasLoanedToday
       };
     });
   }, [customers, transactions]);
@@ -177,19 +210,38 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
       <div className="space-y-3">
         {filteredCustomers.length > 0 ? (
           filteredCustomers.map(customer => (
-            <button key={customer.id} onClick={() => onCustomerSelect(customer)} className="w-full text-left bg-card shadow-sm border border-gray-100 rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
+            <button key={customer.id} onClick={() => onCustomerSelect(customer)} className="relative w-full text-left bg-card shadow-sm border border-gray-100 rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
+              
+              {/* Status Indicators: Top Right Corner */}
+              <div className="absolute top-2 right-2 flex gap-1">
+                {/* Green: New Loan Today (Checked via transaction OR profile date) */}
+                {customer.hasLoanedToday && (
+                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white shadow-sm z-10" title="Peminjaman baru hari ini"></div>
+                )}
+                
+                {/* Yellow: Active but Has Not Paid Today AND Not a new loan today */}
+                {customer.status === 'aktif' && !customer.hasPaidToday && !customer.hasLoanedToday && (
+                    <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full ring-2 ring-white shadow-sm z-10" title="Belum bayar hari ini"></div>
+                )}
+              </div>
+              
               <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
                 <span className="text-xl font-bold text-gray-700">{customer.name[0]?.toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-base text-gray-900 truncate">{customer.name}</p>
+                <p className="text-xs font-medium text-gray-500">{customer.location}</p>
                 {customer.phone && (
                      <p className="text-xs font-medium text-gray-400">{customer.phone}</p>
                 )}
               </div>
               <div className="text-right flex flex-col items-end">
                 <p className="font-normal text-lg text-gray-900">{formatCurrency(customer.totalLoanWithInterest)}</p>
-                <p className="text-xs font-medium text-gray-500">{customer.location}</p>
+                {customer.amountPaidToday > 0 && (
+                    <p className="text-xs font-bold text-green-600 mt-0.5">
+                        + {formatCurrency(customer.amountPaidToday)}
+                    </p>
+                )}
               </div>
             </button>
           ))
