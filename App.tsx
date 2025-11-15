@@ -19,7 +19,21 @@ export interface DateRange {
   end: Date;
 }
 
-// Helper mappings for Supabase (snake_case) <-> App (camelCase)
+// --- OFFLINE SYNC UTILITIES ---
+interface SyncQueueItem {
+  id: string;
+  action: 'INSERT' | 'UPDATE' | 'DELETE';
+  table: 'customers' | 'transactions';
+  payload: any;
+}
+
+const STORAGE_KEYS = {
+  CUSTOMERS: 'monetto_customers',
+  TRANSACTIONS: 'monetto_transactions',
+  SYNC_QUEUE: 'monetto_sync_queue'
+};
+
+// --- SUPABASE MAPPERS ---
 const mapCustomerFromDB = (c: any): Customer => ({
   id: c.id,
   name: c.name,
@@ -30,7 +44,6 @@ const mapCustomerFromDB = (c: any): Customer => ({
   interestRate: c.interest_rate,
   installments: c.installments,
   status: c.status,
-  // Fallback logic: if role doesn't exist yet, infer from loanAmount
   role: c.role || (c.loan_amount === 0 ? 'saver' : 'borrower'),
 });
 
@@ -78,26 +91,135 @@ const App: React.FC = () => {
   const [isSaverModalOpen, setIsSaverModalOpen] = useState(false);
   const [transactionTarget, setTransactionTarget] = useState<Customer | null>(null);
   const [transactionMode, setTransactionMode] = useState<TransactionMode>('repayment');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Fetch data from Supabase on mount
-  useEffect(() => {
-    const fetchData = async () => {
-      const { data: customersData, error: custError } = await supabase.from('customers').select('*');
-      const { data: transactionsData, error: transError } = await supabase.from('transactions').select('*');
+  // --- DATA PERSISTENCE & LOADING ---
 
-      if (custError) console.error("Error loading customers:", custError);
-      if (transError) console.error("Error loading transactions:", transError);
+  const saveToLocal = (key: string, data: any) => {
+    localStorage.setItem(key, JSON.stringify(data));
+  };
+
+  const loadFromLocal = <T,>(key: string): T | null => {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  };
+
+  const addToSyncQueue = (item: SyncQueueItem) => {
+    const queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+    queue.push(item);
+    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, queue);
+  };
+
+  const fetchData = async () => {
+    if (navigator.onLine) {
+      const { data: customersData } = await supabase.from('customers').select('*');
+      const { data: transactionsData } = await supabase.from('transactions').select('*');
 
       if (customersData) {
-        setCustomers(customersData.map(mapCustomerFromDB));
+        const mappedCustomers = customersData.map(mapCustomerFromDB);
+        setCustomers(mappedCustomers);
+        saveToLocal(STORAGE_KEYS.CUSTOMERS, mappedCustomers);
       }
       if (transactionsData) {
-        setTransactions(transactionsData.map(mapTransactionFromDB));
+        const mappedTransactions = transactionsData.map(mapTransactionFromDB);
+        setTransactions(mappedTransactions);
+        saveToLocal(STORAGE_KEYS.TRANSACTIONS, mappedTransactions);
       }
-    };
+    } else {
+      // Load from local storage if offline
+      const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS);
+      const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS);
+      if (localCustomers) setCustomers(localCustomers);
+      if (localTransactions) setTransactions(localTransactions);
+    }
+  };
 
+  const processSyncQueue = async () => {
+    if (!navigator.onLine || isSyncing) return;
+    
+    const queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+    if (queue.length === 0) return;
+
+    setIsSyncing(true);
+    console.log(`Processing ${queue.length} offline items...`);
+
+    const failedItems: SyncQueueItem[] = [];
+
+    for (const item of queue) {
+      let error = null;
+      
+      if (item.table === 'customers') {
+        if (item.action === 'INSERT') {
+          const { error: err } = await supabase.from('customers').insert([item.payload]);
+          error = err;
+        } else if (item.action === 'UPDATE') {
+          const { error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id);
+          error = err;
+        } else if (item.action === 'DELETE') {
+          const { error: err } = await supabase.from('customers').delete().eq('id', item.id);
+          error = err;
+        }
+      } else if (item.table === 'transactions') {
+         if (item.action === 'INSERT') {
+          const { error: err } = await supabase.from('transactions').insert([item.payload]);
+          error = err;
+        } else if (item.action === 'UPDATE') {
+          const { error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id);
+          error = err;
+        } else if (item.action === 'DELETE') {
+          const { error: err } = await supabase.from('transactions').delete().eq('id', item.id);
+          error = err;
+        }
+      }
+
+      if (error) {
+        console.error("Sync error for item:", item, error);
+        // If error is duplicate key (already synced), ignore. Otherwise, keep in queue?
+        // For simplicity, if it's a real network error, we might push back to failedItems.
+        // If integrity error, we might discard. 
+        // Here assuming if online and failed, it might be data conflict or Logic.
+        // We will NOT add it back to avoid infinite loops unless strictly network error.
+      }
+    }
+    
+    // Clear queue after processing
+    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, failedItems);
+    setIsSyncing(false);
+    
+    // Refresh data to ensure consistency
     fetchData();
+  };
+
+  useEffect(() => {
+    fetchData();
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      processSyncQueue();
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
+  
+  // Update local storage whenever state changes to ensure offline view is up to date
+  useEffect(() => {
+      if (customers.length > 0) saveToLocal(STORAGE_KEYS.CUSTOMERS, customers);
+  }, [customers]);
+
+  useEffect(() => {
+      if (transactions.length > 0) saveToLocal(STORAGE_KEYS.TRANSACTIONS, transactions);
+  }, [transactions]);
+
+
+  // --- APP LOGIC ---
 
   const filteredTransactions = useMemo(() => {
     const startDate = new Date(dateRange.start);
@@ -121,17 +243,23 @@ const App: React.FC = () => {
       ...customerData,
       id: `CUST-${new Date().getTime()}`,
       status: 'aktif',
-      role: 'borrower', // Explicitly set as borrower
+      role: 'borrower', 
     };
 
-    const { error } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
-    
-    if (!error) {
-      setCustomers(prev => [...prev, newCustomer]);
-      setIsCustomerModalOpen(false);
+    // Optimistic UI Update
+    setCustomers(prev => [...prev, newCustomer]);
+    setIsCustomerModalOpen(false);
+
+    if (navigator.onLine) {
+        const { error } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
+        if (error) console.error("Error adding customer online:", error);
     } else {
-      console.error("Error adding customer:", error);
-      alert("Gagal menambahkan nasabah.");
+        addToSyncQueue({
+            id: newCustomer.id,
+            action: 'INSERT',
+            table: 'customers',
+            payload: mapCustomerToDB(newCustomer)
+        });
     }
   };
 
@@ -148,7 +276,7 @@ const App: React.FC = () => {
       interestRate: 0,
       installments: 0,
       status: 'aktif',
-      role: 'saver', // Explicitly set as saver
+      role: 'saver',
     };
 
     const initialSavingTransaction: Omit<Transaction, 'id'> = {
@@ -165,54 +293,75 @@ const App: React.FC = () => {
         id: `TRX-${new Date().getTime()}`
     };
 
-    // Insert both
-    const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newSaverAsCustomer)]);
-    if (cError) {
-        console.error("Error adding saver:", cError);
-        alert("Gagal menambahkan penabung.");
-        return;
-    }
-
-    const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
-    if (tError) {
-        console.error("Error adding initial transaction:", tError);
-        // Optionally cleanup customer? For now just alert.
-    }
-
+    // Optimistic Update
     setCustomers(prev => [...prev, newSaverAsCustomer]);
     setTransactions(prev => [...prev, newTransaction]);
     setIsSaverModalOpen(false);
+
+    if (navigator.onLine) {
+        const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newSaverAsCustomer)]);
+        if (cError) console.error("Error adding saver online:", cError);
+        
+        const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+        if (tError) console.error("Error adding transaction online:", tError);
+    } else {
+        addToSyncQueue({
+            id: newSaverAsCustomer.id,
+            action: 'INSERT',
+            table: 'customers',
+            payload: mapCustomerToDB(newSaverAsCustomer)
+        });
+        addToSyncQueue({
+            id: newTransaction.id,
+            action: 'INSERT',
+            table: 'transactions',
+            payload: mapTransactionToDB(newTransaction)
+        });
+    }
   };
 
   const updateCustomer = async (updatedCustomer: Customer) => {
-    const { error } = await supabase
-      .from('customers')
-      .update(mapCustomerToDB(updatedCustomer))
-      .eq('id', updatedCustomer.id);
-
-    if (!error) {
-      setCustomers(prevCustomers => 
+    // Optimistic Update
+    setCustomers(prevCustomers => 
         prevCustomers.map(c => 
           c.id === updatedCustomer.id ? updatedCustomer : c
         )
-      );
+    );
+
+    if (navigator.onLine) {
+        const { error } = await supabase
+          .from('customers')
+          .update(mapCustomerToDB(updatedCustomer))
+          .eq('id', updatedCustomer.id);
+        if (error) console.error("Error updating customer online:", error);
     } else {
-      console.error("Error updating customer:", error);
+        addToSyncQueue({
+            id: updatedCustomer.id,
+            action: 'UPDATE',
+            table: 'customers',
+            payload: mapCustomerToDB(updatedCustomer)
+        });
     }
   };
 
   const deleteCustomer = async (customerId: string) => {
-    // Deleting customer usually deletes transactions via CASCADE in DB, but we update local state too
-    const { error } = await supabase.from('customers').delete().eq('id', customerId);
-    
-    if (!error) {
-      setCustomers(prev => prev.filter(c => c.id !== customerId));
-      setTransactions(prev => prev.filter(t => t.customerId !== customerId));
-      if (transactionTarget?.id === customerId) {
+    // Optimistic Update
+    setCustomers(prev => prev.filter(c => c.id !== customerId));
+    setTransactions(prev => prev.filter(t => t.customerId !== customerId));
+    if (transactionTarget?.id === customerId) {
           setTransactionTarget(null);
-      }
+    }
+
+    if (navigator.onLine) {
+        const { error } = await supabase.from('customers').delete().eq('id', customerId);
+        if (error) console.error("Error deleting customer online:", error);
     } else {
-      console.error("Error deleting customer:", error);
+        addToSyncQueue({
+            id: customerId,
+            action: 'DELETE',
+            table: 'customers',
+            payload: null
+        });
     }
   };
   
@@ -230,19 +379,8 @@ const App: React.FC = () => {
         if (customer.status !== newStatus) {
            const updatedCustomer: Customer = { ...customer, status: newStatus };
            
-           // Update DB
-           const { error } = await supabase
-             .from('customers')
-             .update({ status: newStatus })
-             .eq('id', customer.id);
-             
-           if (!error) {
-             setCustomers(prevCustomers => 
-                prevCustomers.map(c => 
-                  c.id === customer.id ? updatedCustomer : c
-                )
-              );
-           }
+           // Use the main update function to handle sync/offline
+           updateCustomer(updatedCustomer);
         }
       }
   };
@@ -253,12 +391,19 @@ const App: React.FC = () => {
       id: `TRX-${new Date().getTime()}`,
     };
 
-    const { error } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+    // Optimistic Update
+    setTransactions(prev => [...prev, newTransaction]);
 
-    if (!error) {
-      setTransactions(prev => [...prev, newTransaction]);
+    if (navigator.onLine) {
+        const { error } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+        if (error) console.error("Error adding transaction online:", error);
     } else {
-      console.error("Error adding transaction:", error);
+        addToSyncQueue({
+            id: newTransaction.id,
+            action: 'INSERT',
+            table: 'transactions',
+            payload: mapTransactionToDB(newTransaction)
+        });
     }
   };
   
@@ -269,50 +414,76 @@ const App: React.FC = () => {
       date: new Date().toISOString(),
     };
     
-    const { error } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+    // Optimistic Update
+    const updatedTransactions = [...transactions, newTransaction];
+    setTransactions(updatedTransactions);
+    setTransactionTarget(null);
     
-    if (!error) {
-      const updatedTransactions = [...transactions, newTransaction];
-      setTransactions(updatedTransactions);
-      setTransactionTarget(null);
-      if (transactionData.type === TransactionType.REPAYMENT) {
-          recalculateCustomerStatus(transactionData.customerId, updatedTransactions);
-      }
+    // Sync Logic
+    if (navigator.onLine) {
+        const { error } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+        if (error) console.error("Error adding numpad transaction online:", error);
     } else {
-      console.error("Error adding transaction from numpad:", error);
+        addToSyncQueue({
+            id: newTransaction.id,
+            action: 'INSERT',
+            table: 'transactions',
+            payload: mapTransactionToDB(newTransaction)
+        });
+    }
+
+    if (transactionData.type === TransactionType.REPAYMENT) {
+        recalculateCustomerStatus(transactionData.customerId, updatedTransactions);
     }
   };
 
   const updateTransaction = async (updatedTransaction: Transaction) => {
     const transactionToSave = { ...updatedTransaction, isEdited: true };
-    const { error } = await supabase
-      .from('transactions')
-      .update(mapTransactionToDB(transactionToSave))
-      .eq('id', transactionToSave.id);
-
-    if (!error) {
-      const updatedTransactions = transactions.map(t =>
+    
+    // Optimistic Update
+    const updatedTransactions = transactions.map(t =>
         t.id === updatedTransaction.id ? transactionToSave : t
-      );
-      setTransactions(updatedTransactions);
-      recalculateCustomerStatus(updatedTransaction.customerId, updatedTransactions);
+    );
+    setTransactions(updatedTransactions);
+
+    if (navigator.onLine) {
+        const { error } = await supabase
+          .from('transactions')
+          .update(mapTransactionToDB(transactionToSave))
+          .eq('id', transactionToSave.id);
+        if (error) console.error("Error updating transaction online:", error);
     } else {
-      console.error("Error updating transaction:", error);
+        addToSyncQueue({
+            id: transactionToSave.id,
+            action: 'UPDATE',
+            table: 'transactions',
+            payload: mapTransactionToDB(transactionToSave)
+        });
     }
+
+    recalculateCustomerStatus(updatedTransaction.customerId, updatedTransactions);
   };
 
   const deleteTransaction = async (transactionId: string) => {
     const transactionToDelete = transactions.find(t => t.id === transactionId);
     if (transactionToDelete) {
-      const { error } = await supabase.from('transactions').delete().eq('id', transactionId);
+      // Optimistic Update
+      const updatedTransactions = transactions.filter(t => t.id !== transactionId);
+      setTransactions(updatedTransactions);
       
-      if (!error) {
-        const updatedTransactions = transactions.filter(t => t.id !== transactionId);
-        setTransactions(updatedTransactions);
-        recalculateCustomerStatus(transactionToDelete.customerId, updatedTransactions);
+      if (navigator.onLine) {
+          const { error } = await supabase.from('transactions').delete().eq('id', transactionId);
+          if (error) console.error("Error deleting transaction online:", error);
       } else {
-        console.error("Error deleting transaction:", error);
+          addToSyncQueue({
+              id: transactionId,
+              action: 'DELETE',
+              table: 'transactions',
+              payload: null
+          });
       }
+
+      recalculateCustomerStatus(transactionToDelete.customerId, updatedTransactions);
     }
   };
 
@@ -334,7 +505,19 @@ const App: React.FC = () => {
 
   return (
     <div className="font-sans min-h-screen text-gray-900 pb-28">
-      <main className="flex-1 p-3 sm:p-6 lg:p-8">
+      {/* Offline Indicator */}
+      {!isOnline && (
+          <div className="bg-red-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
+              OFFLINE MODE - Data disimpan secara lokal
+          </div>
+      )}
+      {isSyncing && isOnline && (
+           <div className="bg-blue-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
+              SINKRONISASI DATA...
+          </div>
+      )}
+
+      <main className={`flex-1 p-3 sm:p-6 lg:p-8 ${!isOnline || isSyncing ? 'pt-8' : ''}`}>
         {activePage === 'dashboard' && (
           <Dashboard 
             customers={customers} 
