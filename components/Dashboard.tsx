@@ -7,6 +7,7 @@ import TransactionForm from './TransactionForm';
 import { formatCurrency } from '../utils/formatters';
 import { TransactionIcon } from './TransactionIcon';
 import DateRangePickerModal from './DateRangePickerModal';
+import { holidays } from '../utils/holidays';
 
 interface DashboardProps {
   customers: Customer[];
@@ -21,6 +22,7 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, customerMap, dateRange, setDateRange, addTransaction }) => {
     const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+    const [viewMode, setViewMode] = useState<'transactions' | 'missed'>('transactions');
 
     const handleAddTransaction = (transactionData: Omit<Transaction, 'id'>) => {
         addTransaction(transactionData);
@@ -96,8 +98,74 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
         };
     }, [dailyTransactions]);
   
-    const sortedDailyTransactions = [...dailyTransactions]
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sortedDailyTransactions = useMemo(() => {
+        return [...dailyTransactions]
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [dailyTransactions]);
+
+    // Logic for Missed Payments (Bolong)
+    const missedActivities = useMemo(() => {
+        const missed = [];
+        const activeBorrowers = customers.filter(c => c.status === 'aktif' && c.role === 'borrower');
+        
+        // Helper to format YYYY-MM-DD locally
+        const toLocalYMD = (date: Date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        // Iterate through each day in the selected range
+        let current = new Date(dateRange.start);
+        current.setHours(0,0,0,0);
+        const end = new Date(dateRange.end);
+        end.setHours(0,0,0,0);
+        
+        while (current <= end) {
+            const dayNum = current.getDay();
+            const dateString = toLocalYMD(current);
+            
+            // Skip Sundays (0), Saturdays (6), and Holidays
+            const isHoliday = holidays.includes(dateString);
+            const isWeekend = dayNum === 0 || dayNum === 6;
+            
+            if (!isHoliday && !isWeekend) {
+                const dateObj = new Date(current); // capture current state
+
+                // Check each customer
+                activeBorrowers.forEach(customer => {
+                    // Must be after loan date (usually payment starts D+1)
+                    const loanDate = new Date(customer.loanDate);
+                    loanDate.setHours(0,0,0,0);
+
+                    if (dateObj > loanDate) {
+                        const hasPaid = dailyTransactions.some(t => 
+                            t.customerId === customer.id && 
+                            t.type === TransactionType.REPAYMENT &&
+                            toLocalYMD(new Date(t.date)) === dateString
+                        );
+
+                        if (!hasPaid) {
+                             const installment = customer.installments > 0 
+                                ? (customer.loanAmount * (1 + customer.interestRate/100)) / customer.installments 
+                                : 0;
+
+                             missed.push({
+                                 id: `missed-${customer.id}-${dateString}`,
+                                 customer,
+                                 date: dateObj,
+                                 expectedAmount: installment
+                             });
+                        }
+                    }
+                });
+            }
+            current.setDate(current.getDate() + 1);
+        }
+        return missed.sort((a, b) => b.date.getTime() - a.date.getTime());
+    }, [customers, dailyTransactions, dateRange]);
+
 
     const getTransactionTitle = (t: Transaction) => {
         return customerMap.get(t.customerId)?.name || 'N/A';
@@ -118,22 +186,18 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
     const dailyRepaymentsStr = formatCurrency(dailyRepayments);
     const dailySavingsStr = formatCurrency(dailySavings);
 
-    // Logic update: 
-    // Length of "Rp 999.999" is 10 chars.
-    // Length of "Rp 1.000.000" is 12 chars.
-    // We start shrinking if length > 10 (entering Millions).
     const headerFontSize = useMemo(() => {
         const len = totalUangStr.length;
-        if (len > 16) return 'text-2xl'; // Milyaran (Rp 1.000.000.000)
-        if (len > 13) return 'text-3xl'; // Puluhan Juta (Rp 10.000.000)
-        if (len > 10) return 'text-4xl'; // Jutaan (Rp 1.000.000)
-        return 'text-5xl'; // Ratusan Ribu (Rp 999.999)
+        if (len > 16) return 'text-2xl'; 
+        if (len > 13) return 'text-3xl'; 
+        if (len > 10) return 'text-4xl'; 
+        return 'text-5xl'; 
     }, [totalUangStr]);
 
     const getCardFontSize = (len: number) => {
         if (len > 16) return 'text-xl';
         if (len > 13) return 'text-2xl';
-        if (len > 10) return 'text-3xl'; // Jutaan shrinks here
+        if (len > 10) return 'text-3xl'; 
         return 'text-4xl';
     };
 
@@ -172,7 +236,6 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         <span className="text-gray-400 font-medium">Cash</span>
                         <span className="font-bold text-white text-lg">{formatCurrency(breakdowns.totalUang.cash)}</span>
                     </div>
-                    {/* Removed pt-1 to make it symmetrical with pb-3 above (12px vs 12px via space-y-3) */}
                     <div className="flex justify-between items-center">
                         <span className="text-gray-400 font-medium">Transfer</span>
                         <span className="font-bold text-white text-lg">{formatCurrency(breakdowns.totalUang.transfer)}</span>
@@ -181,7 +244,6 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
             </div>
 
             {/* Overlapping Cards Container */}
-            {/* Adjusted margin-top to overlap nicely without covering header content */}
             <div className="px-1 -mt-24 relative z-10 space-y-4">
                 
                 {/* Uang Tagihan Card (Lime) */}
@@ -197,7 +259,6 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         </div>
                     </div>
                     <h4 className="text-black/70 text-xs font-bold tracking-widest uppercase mb-4">UANG TAGIHAN</h4>
-                    {/* Changed space-y-3 to space-y-2 (8px gap) and removed pt-1 to match pb-2 (8px padding) */}
                     <div className="text-sm space-y-2">
                         <div className="flex justify-between items-center border-b border-dashed border-black/10 pb-2">
                             <span className="text-black/60 font-medium">Cash</span>
@@ -223,7 +284,6 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         </div>
                     </div>
                     <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN</h4>
-                     {/* Changed space-y-3 to space-y-2 (8px gap) and removed pt-1 to match pb-2 (8px padding) */}
                     <div className="text-sm space-y-2">
                          <div className="flex justify-between items-center border-b border-dashed border-white/20 pb-2">
                             <span className="text-gray-500 font-medium">Cash</span>
@@ -238,43 +298,107 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
 
             </div>
 
-            {/* Recent Activity Section */}
+            {/* Recent Activity / Missed Payments Section */}
             <div className="pt-6 px-2">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">Aktivitas</h3>
+                    <div className="flex items-center gap-3">
+                        <h3 className="text-xl font-bold text-gray-900">
+                            {viewMode === 'transactions' ? 'Aktivitas' : 'Belum Bayar'}
+                        </h3>
+                        {/* Switch Toggle */}
+                        <div className="bg-gray-100 p-1 rounded-full flex items-center">
+                            <button 
+                                onClick={() => setViewMode('transactions')}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${viewMode === 'transactions' ? 'bg-white shadow-sm text-black' : 'text-gray-400'}`}
+                                title="Riwayat Transaksi"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('missed')}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${viewMode === 'missed' ? 'bg-red-50 text-red-600 shadow-sm' : 'text-gray-400'}`}
+                                title="Nasabah Bolong"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
                     <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">{activityTitleDate}</span>
                 </div>
                 
                 <div className="bg-card shadow-sm rounded-3xl overflow-hidden border border-gray-100">
-                    {sortedDailyTransactions.length > 0 ? (
-                        sortedDailyTransactions.map((t, index) => {
-                          const amountInfo = getTransactionAmount(t);
-                          return (
-                            <div key={t.id} className={`p-5 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors ${index !== sortedDailyTransactions.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                                <div className="flex items-center flex-1 min-w-0">
-                                    <TransactionIcon type={t.type} />
-                                    <div className="ml-4 flex-1 min-w-0">
-                                        <p className="font-bold text-gray-900 truncate">{getTransactionTitle(t)}</p>
-                                        <p className="text-sm text-gray-500">
-                                            {new Date(t.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · {t.paymentMethod}
+                    {viewMode === 'transactions' ? (
+                        // EXISTING TRANSACTION LIST
+                        sortedDailyTransactions.length > 0 ? (
+                            sortedDailyTransactions.map((t, index) => {
+                              const amountInfo = getTransactionAmount(t);
+                              return (
+                                <div key={t.id} className={`p-5 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors ${index !== sortedDailyTransactions.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                                    <div className="flex items-center flex-1 min-w-0">
+                                        <TransactionIcon type={t.type} />
+                                        <div className="ml-4 flex-1 min-w-0">
+                                            <p className="font-bold text-gray-900 truncate">{getTransactionTitle(t)}</p>
+                                            <p className="text-sm text-gray-500">
+                                                {new Date(t.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · {t.paymentMethod}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <p className="font-light text-lg text-black">
+                                        {formatCurrency(amountInfo.value, true)}
+                                    </p>
+                                </div>
+                              );
+                            })
+                        ) : (
+                            <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
+                                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                                <p>Tidak ada aktivitas.</p>
+                            </div>
+                        )
+                    ) : (
+                        // MISSED PAYMENTS LIST
+                        missedActivities.length > 0 ? (
+                            missedActivities.map((item, index) => (
+                                <div key={item.id} className={`p-5 flex items-center justify-between gap-4 hover:bg-red-50/30 transition-colors ${index !== missedActivities.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                                    <div className="flex items-center flex-1 min-w-0">
+                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </div>
+                                        <div className="ml-4 flex-1 min-w-0">
+                                            <p className="font-bold text-gray-900 truncate">{item.customer.name}</p>
+                                            <p className="text-xs font-medium text-gray-500">{item.customer.location}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-light text-lg text-red-600">
+                                            {item.expectedAmount > 0 ? formatCurrency(item.expectedAmount) : 'Rp 0'}
+                                        </p>
+                                        <p className="text-xs text-gray-400">
+                                            {item.date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                                         </p>
                                     </div>
                                 </div>
-                                <p className="font-light text-lg text-black">
-                                    {formatCurrency(amountInfo.value, true)}
-                                </p>
+                            ))
+                        ) : (
+                            <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
+                                <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <p>Semua nasabah aktif sudah bayar!</p>
                             </div>
-                          );
-                        })
-                    ) : (
-                        <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
-                            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                            </div>
-                            <p>Tidak ada aktivitas.</p>
-                        </div>
+                        )
                     )}
                 </div>
             </div>
