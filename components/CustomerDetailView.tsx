@@ -40,11 +40,20 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
         installmentsPaid,
         loanProgressPercentage 
     } = useMemo(() => {
+        // Helper to get local YYYY-MM-DD string to avoid UTC shifts
+        const toLocalYMD = (d: Date) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
         const repayments = customerTransactions
             .filter(t => t.type === TransactionType.REPAYMENT);
 
+        // Use strict YYYY-MM-DD comparison based on local time
         const repaymentDates = new Set(
-            repayments.map(t => new Date(t.date).toISOString().split('T')[0])
+            repayments.map(t => toLocalYMD(new Date(t.date)))
         );
 
         const loanDate = new Date(customer.loanDate + 'T00:00:00');
@@ -69,11 +78,11 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
 
             for (let d = new Date(checkStartDate); d <= loopEndDate; d.setDate(d.getDate() + 1)) {
                 const dayOfWeek = d.getDay();
-                const dateString = d.toISOString().split('T')[0];
+                const dateString = toLocalYMD(d);
 
                 // Check if it's a weekday (Mon-Fri) and not a holiday
                 if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidays.includes(dateString)) {
-                    // This is an expected payment day. Check if payment was made on this day.
+                    // This is an expected payment day. Check if payment was made on this day (using local string match).
                     if (!repaymentDates.has(dateString)) {
                         missedDates.push(new Date(d));
                     }

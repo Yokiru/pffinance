@@ -183,12 +183,13 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-base text-gray-900 truncate">{customer.name}</p>
-                <p className="text-xs font-medium text-gray-500">
-                  {customer.location}
-                </p>
+                {customer.phone && (
+                     <p className="text-xs font-medium text-gray-400">{customer.phone}</p>
+                )}
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end">
                 <p className="font-normal text-lg text-gray-900">{formatCurrency(customer.totalLoanWithInterest)}</p>
+                <p className="text-xs font-medium text-gray-500">{customer.location}</p>
               </div>
             </button>
           ))
