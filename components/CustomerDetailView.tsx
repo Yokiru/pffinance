@@ -81,8 +81,8 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
                 const dayOfWeek = d.getDay();
                 const dateString = toLocalYMD(d);
 
-                // Check if it's a weekday (Mon-Fri) and not a holiday (static + custom)
-                if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isDateHoliday(dateString, customHolidays)) {
+                // Check if it's not Sunday (0) and not a holiday (static + custom). Saturday (6) is now included.
+                if (dayOfWeek !== 0 && !isDateHoliday(dateString, customHolidays)) {
                     // This is an expected payment day. Check if payment was made on this day (using local string match).
                     if (!repaymentDates.has(dateString)) {
                         missedDates.push(new Date(d));
