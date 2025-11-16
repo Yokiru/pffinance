@@ -269,8 +269,9 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             {dailyRepaymentsStr}
                         </p>
                         <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center text-black self-start flex-shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                            {/* Standard icon size for cards: w-5 h-5 or w-6 h-6 */}
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" className="w-6 h-6">
+                                <path d="M808.31-407.54 569.69-168.92q-2.97 2.92-6.69 4.38t-7.69 1.46h-12.23q-4.31 0-7.54-3.23-3.23-3.23-3.23-7.54v-12.23q0-3.97 1.46-7.69t4.38-6.69l238.62-238.62 31.54 31.54ZM120-304.62v-350.76q0-26.66 18.98-45.64T184.62-720h590.76q26.66 0 45.64 18.98T840-655.38v13.07q0 17.16-7.77 29.35-7.77 12.19-23 24.5h-1.61q-3.7 0-7.04 1.38-3.35 1.39-5.89 3.93l-144 144q-8.69 8.69-20.71 13.92-12.02 5.23-25.29 5.23H280q-8.5 0-14.25 5.76T260-399.97q0 8.51 5.75 14.24T280-380h272.77q10.86 0 14.74 10.08 3.87 10.07-3.82 17.77l-93 93q-8.69 8.69-20.71 13.92-12.02 5.23-25.29 5.23H184.62q-26.66 0-45.64-18.98T120-304.62ZM280-540h160q8.5 0 14.25-5.76t5.75-14.27q0-8.51-5.75-14.24T440-580H280q-8.5 0-14.25 5.76T260-559.97q0 8.51 5.75 14.24T280-540Zm550.77 108.46-31.54-31.54 31.3-31.27q4.35-4.34 9.56-4.34 5.22 0 9.45 4.23l12.61 12.61q4.23 4.33 4.23 9.51 0 5.19-4.34 9.53l-31.27 31.27Z"/>
                             </svg>
                         </div>
                     </div>
@@ -294,12 +295,10 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             {dailySavingsStr}
                         </p>
                         <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white self-start flex-shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
-                            </svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
                         </div>
                     </div>
-                    <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN (NET)</h4>
+                    <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN</h4>
                     <div className="text-sm space-y-2">
                          <div className="flex justify-between items-center border-b border-dashed border-white/20 pb-2">
                             <span className="text-gray-500 font-medium">Cash</span>
@@ -319,8 +318,8 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             {dailyLoansStr}
                         </p>
                         <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center text-black self-start flex-shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" className="w-6 h-6">
+                                <path d="M160-161.85v-652.61q0-5.46 4.46-7.19 4.46-1.73 8.69.96l28.23 21.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l35.07-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.93 0 9.39-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92L686-823.69q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l28.23-21.31q4.23-2.69 8.69-.96 4.46 1.73 4.46 7.19v652.61q0 10.16-8.54 14.39t-17-1.92l-15.84-11.24q-4.47-2.92-9.39-2.92-4.92 0-9.38 2.92l-35.08 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-35.07 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.39-2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93-9.38-2.93-4.92 0-9.38-2.93l-35.08 24.31q-4.46 2.92-9.39 2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38 2.92L274-136.31q-4.46 2.93-9.38 2.93-4.93 0-9.39-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-15.84 11.24q-8.46 6.15-17 1.92T160-161.85Zm120-162.77h400q8.54 0 14.27-5.73t5.73-14.27q0-8.53-5.73-14.26-5.73-5.74-14.27-5.74H280q-8.54 0-14.27 5.74-5.73 5.73-5.73 14.26 0 8.54 5.73 14.27t14.27 5.73ZM280-460h400q8.54 0 14.27-5.73T700-480q0-8.54-5.73-14.27T680-500H280q-8.54 0-14.27 5.73T260-480q0 8.54 5.73 14.27T280-460Zm0-135.38h400q8.54 0 14.27-5.74 5.73-5.73 5.73-14.26 0-8.54-5.73-14.27T680-635.38H280q-8.54 0-14.27 5.73T260-615.38q0 8.53 5.73 14.26 5.73 5.74 14.27 5.74Z"/>
                             </svg>
                         </div>
                     </div>
@@ -396,8 +395,9 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             })
                         ) : (
                             <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
-                                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center">
+                                    {/* Enlarged Empty State Icon */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
                                 </div>
@@ -432,8 +432,9 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             ))
                         ) : (
                             <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
-                                <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center">
+                                     {/* Enlarged Empty State Icon */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                 </div>

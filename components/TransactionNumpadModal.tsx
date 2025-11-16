@@ -231,7 +231,8 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                         className="w-10 h-10 flex items-center justify-center bg-card border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
                                         aria-label="Kembali"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        {/* Updated to w-6 h-6 for better touch target visibility */}
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                                         </svg>
                                     </button>

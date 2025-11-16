@@ -161,8 +161,8 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
                 aria-label="Urutkan nasabah"
                 title="Urutkan"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" className="h-6 w-6 text-gray-700">
+                    <path d="M120-240v-80h240v80H120Zm0-200v-80h480v80H120Zm0-200v-80h720v80H120Z"/>
                 </svg>
             </button>
             {isSortMenuOpen && (
