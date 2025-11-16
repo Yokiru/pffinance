@@ -264,7 +264,6 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                             <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-4">
                                 {withdrawalExceedsBalance && <p className="text-red-500 text-xs text-center mb-2 font-bold bg-red-50 px-3 py-1 rounded-full">Saldo tidak cukup</p>}
                                 <div className="flex items-center justify-center">
-                                    <span className={`font-medium text-4xl mr-2 text-gray-400 self-center`}>Rp</span>
                                     <span className={`${amountFontSizeClass} font-bold text-gray-900 tracking-tight leading-none`}>
                                         {integerPart}
                                         {amount.includes('.') && <span className="text-gray-400">,{decimalPart}</span>}

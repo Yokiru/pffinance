@@ -271,7 +271,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
         )}
       </div>
 
-      <div className="flex gap-3 pt-2">
+      <div className="flex gap-3 pt-6">
         {step === 1 ? (
            <button
             type="button"
