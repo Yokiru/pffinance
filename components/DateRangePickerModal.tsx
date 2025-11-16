@@ -8,9 +8,10 @@ interface DateRangePickerModalProps {
   onClose: () => void;
   currentRange: DateRange;
   onApply: (range: DateRange) => void;
+  onManageHolidays?: () => void;
 }
 
-const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onClose, currentRange, onApply }) => {
+const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onClose, currentRange, onApply, onManageHolidays }) => {
   const [viewDate, setViewDate] = useState(currentRange.end);
   const [selectedStart, setSelectedStart] = useState<Date | null>(currentRange.start);
   const [selectedEnd, setSelectedEnd] = useState<Date | null>(currentRange.end);
@@ -113,7 +114,22 @@ const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onC
   const calendarGrid = [...leadingDays, ...days, ...trailingDays];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Pilih Rentang Tanggal">
+    <Modal 
+        isOpen={isOpen} 
+        onClose={onClose} 
+        title="Pilih Rentang Tanggal"
+        headerAction={onManageHolidays ? (
+            <button 
+                onClick={onManageHolidays}
+                className="w-10 h-10 flex items-center justify-center bg-red-50 rounded-full text-red-600 hover:bg-red-100 transition-colors"
+                title="Atur Hari Libur"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </button>
+        ) : undefined}
+    >
       <div className="flex flex-col">
         <div className="flex justify-between items-center mb-4">
           <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-gray-100">

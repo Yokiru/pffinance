@@ -7,7 +7,8 @@ import TransactionForm from './TransactionForm';
 import { formatCurrency } from '../utils/formatters';
 import { TransactionIcon } from './TransactionIcon';
 import DateRangePickerModal from './DateRangePickerModal';
-import { holidays } from '../utils/holidays';
+import HolidayPickerModal from './HolidayPickerModal';
+import { isDateHoliday } from '../utils/holidays';
 
 interface DashboardProps {
   customers: Customer[];
@@ -17,16 +18,25 @@ interface DashboardProps {
   dateRange: DateRange;
   setDateRange: (range: DateRange) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  customHolidays: string[];
+  setCustomHolidays: (holidays: string[]) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, customerMap, dateRange, setDateRange, addTransaction }) => {
+const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, customerMap, dateRange, setDateRange, addTransaction, customHolidays, setCustomHolidays }) => {
     const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+    const [isHolidayPickerOpen, setIsHolidayPickerOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'transactions' | 'missed'>('transactions');
 
     const handleAddTransaction = (transactionData: Omit<Transaction, 'id'>) => {
         addTransaction(transactionData);
         setIsTransactionModalOpen(false);
+    };
+
+    const handleOpenHolidayPicker = () => {
+        setIsDatePickerOpen(false);
+        // Small delay to allow the first modal to close smoothly before the next opens
+        setTimeout(() => setIsHolidayPickerOpen(true), 200);
     };
     
     const displayedDate = useMemo(() => {
@@ -140,8 +150,8 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
             const dayNum = current.getDay();
             const dateString = toLocalYMD(current);
             
-            // Skip Sundays (0), Saturdays (6), and Holidays
-            const isHoliday = holidays.includes(dateString);
+            // Skip Sundays (0), Saturdays (6), and Holidays (Static + Custom)
+            const isHoliday = isDateHoliday(dateString, customHolidays);
             const isWeekend = dayNum === 0 || dayNum === 6;
             
             if (!isHoliday && !isWeekend) {
@@ -178,7 +188,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
             current.setDate(current.getDate() + 1);
         }
         return missed.sort((a, b) => b.date.getTime() - a.date.getTime());
-    }, [customers, dailyTransactions, dateRange]);
+    }, [customers, dailyTransactions, dateRange, customHolidays]);
 
 
     const getTransactionTitle = (t: Transaction) => {
@@ -232,18 +242,20 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         <p className="text-white/80 text-xs font-bold tracking-widest uppercase">TOTAL UANG</p>
                     </div>
                     
-                    {/* Date Picker Button */}
-                    <button 
-                        onClick={() => setIsDatePickerOpen(true)}
-                        className="bg-white rounded-xl w-14 h-14 flex flex-col items-center justify-center text-black hover:bg-gray-200 transition-all active:scale-95 shadow-lg flex-shrink-0"
-                    >
-                        <span className="text-[9px] uppercase font-bold text-gray-500 leading-none mb-0.5">
-                            {dateRange.start.toLocaleDateString('id-ID', { month: 'short' }).toUpperCase()}
-                        </span>
-                        <span className="text-xl font-bold leading-none">
-                            {dateRange.start.getDate()}
-                        </span>
-                    </button>
+                    <div className="flex flex-col gap-2">
+                        {/* Date Picker Button */}
+                        <button 
+                            onClick={() => setIsDatePickerOpen(true)}
+                            className="bg-white rounded-xl w-14 h-14 flex flex-col items-center justify-center text-black hover:bg-gray-200 transition-all active:scale-95 shadow-lg flex-shrink-0"
+                        >
+                            <span className="text-[9px] uppercase font-bold text-gray-500 leading-none mb-0.5">
+                                {dateRange.start.toLocaleDateString('id-ID', { month: 'short' }).toUpperCase()}
+                            </span>
+                            <span className="text-xl font-bold leading-none">
+                                {dateRange.start.getDate()}
+                            </span>
+                        </button>
+                    </div>
                 </div>
                 
                 {/* Breakdown Section (Inside Header) */}
@@ -319,7 +331,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         </p>
                         <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center text-black self-start flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" className="w-6 h-6">
-                                <path d="M160-161.85v-652.61q0-5.46 4.46-7.19 4.46-1.73 8.69.96l28.23 21.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l35.07-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.93 0 9.39-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92L686-823.69q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l28.23-21.31q4.23-2.69 8.69-.96 4.46 1.73 4.46 7.19v652.61q0 10.16-8.54 14.39t-17-1.92l-15.84-11.24q-4.47-2.92-9.39-2.92-4.92 0-9.38 2.92l-35.08 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-35.07 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.39-2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93-9.38-2.93-4.92 0-9.38-2.93l-35.08 24.31q-4.46 2.92-9.39 2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38 2.92L274-136.31q-4.46 2.93-9.38 2.93-4.93 0-9.39-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-15.84 11.24q-8.46 6.15-17 1.92T160-161.85Zm120-162.77h400q8.54 0 14.27-5.73t5.73-14.27q0-8.53-5.73-14.26-5.73-5.74-14.27-5.74H280q-8.54 0-14.27 5.74-5.73 5.73-5.73 14.26 0 8.54 5.73 14.27t14.27 5.73ZM280-460h400q8.54 0 14.27-5.73T700-480q0-8.54-5.73-14.27T680-500H280q-8.54 0-14.27 5.73T260-480q0 8.54 5.73 14.27T280-460Zm0-135.38h400q8.54 0 14.27-5.74 5.73-5.73 5.73-14.26 0-8.54-5.73-14.27T680-635.38H280q-8.54 0-14.27 5.73T260-615.38q0 8.53 5.73 14.26 5.73 5.74 14.27 5.74Z"/>
+                                <path d="M160-161.85v-652.61q0-5.46 4.46-7.19 4.46-1.73 8.69.96l28.23 21.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l35.07-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.93 0 9.39-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92L686-823.69q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l28.23-21.31q4.23-2.69 8.69-.96 4.46 1.73 4.46 7.19v652.61q0 10.16-8.54 14.39t-17-1.92l-15.84-11.24q-4.47-2.92-9.39-2.92-4.92 0-9.38 2.92l-35.08 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-35.07 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.39-2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38 2.92L274-136.31q-4.46 2.93-9.38 2.93-4.93 0-9.39-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-15.84 11.24q-8.46 6.15-17 1.92T160-161.85Zm120-162.77h400q8.54 0 14.27-5.73t5.73-14.27q0-8.53-5.73-14.26-5.73-5.74-14.27-5.74H280q-8.54 0-14.27 5.74-5.73 5.73-5.73 14.26 0 8.54 5.73 14.27t14.27 5.73ZM280-460h400q8.54 0 14.27-5.73T700-480q0-8.54-5.73-14.27T680-500H280q-8.54 0-14.27 5.73T260-480q0 8.54 5.73 14.27T280-460Zm0-135.38h400q8.54 0 14.27-5.74 5.73-5.73 5.73-14.26 0-8.54-5.73-14.27T680-635.38H280q-8.54 0-14.27 5.73T260-615.38q0 8.53 5.73 14.26 5.73 5.74 14.27 5.74Z"/>
                             </svg>
                         </div>
                     </div>
@@ -454,6 +466,14 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 onClose={() => setIsDatePickerOpen(false)}
                 currentRange={dateRange}
                 onApply={setDateRange}
+                onManageHolidays={handleOpenHolidayPicker}
+            />
+
+            <HolidayPickerModal
+                isOpen={isHolidayPickerOpen}
+                onClose={() => setIsHolidayPickerOpen(false)}
+                customHolidays={customHolidays}
+                onUpdateHolidays={setCustomHolidays}
             />
         </div>
     );

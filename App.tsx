@@ -30,7 +30,8 @@ interface SyncQueueItem {
 const STORAGE_KEYS = {
   CUSTOMERS: 'monetto_customers',
   TRANSACTIONS: 'monetto_transactions',
-  SYNC_QUEUE: 'monetto_sync_queue'
+  SYNC_QUEUE: 'monetto_sync_queue',
+  HOLIDAYS: 'monetto_holidays'
 };
 
 // --- SUPABASE MAPPERS ---
@@ -85,6 +86,7 @@ const mapTransactionToDB = (t: Transaction) => ({
 const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [customHolidays, setCustomHolidays] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>({ start: new Date(), end: new Date() });
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -112,6 +114,10 @@ const App: React.FC = () => {
   };
 
   const fetchData = async () => {
+    // Load Holidays from Local (No Supabase table for holidays yet in this version)
+    const localHolidays = loadFromLocal<string[]>(STORAGE_KEYS.HOLIDAYS);
+    if (localHolidays) setCustomHolidays(localHolidays);
+
     if (navigator.onLine) {
       const { data: customersData } = await supabase.from('customers').select('*');
       const { data: transactionsData } = await supabase.from('transactions').select('*');
@@ -211,6 +217,11 @@ const App: React.FC = () => {
   useEffect(() => {
       if (transactions.length > 0) saveToLocal(STORAGE_KEYS.TRANSACTIONS, transactions);
   }, [transactions]);
+
+  // Save holidays whenever changed
+  useEffect(() => {
+      saveToLocal(STORAGE_KEYS.HOLIDAYS, customHolidays);
+  }, [customHolidays]);
 
 
   // --- APP LOGIC ---
@@ -553,6 +564,8 @@ const App: React.FC = () => {
             dateRange={dateRange}
             setDateRange={setDateRange}
             addTransaction={addTransaction}
+            customHolidays={customHolidays}
+            setCustomHolidays={setCustomHolidays}
           />
         )}
         {activePage === 'customers' && (
@@ -604,6 +617,7 @@ const App: React.FC = () => {
             onDeleteCustomer={deleteCustomer}
             onWithdrawClick={handleWithdrawClick}
             mode={transactionMode}
+            customHolidays={customHolidays}
         />
       )}
     </div>

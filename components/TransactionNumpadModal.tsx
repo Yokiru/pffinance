@@ -20,9 +20,10 @@ interface TransactionNumpadModalProps {
   onDeleteCustomer: (customerId: string) => void;
   onWithdrawClick: (customer: Customer) => void;
   mode: 'repayment' | 'savings' | 'withdrawal';
+  customHolidays: string[];
 }
 
-const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ customer, transactions, onClose, onSubmit, onUpdateCustomer, onUpdateTransaction, onDeleteTransaction, onDeleteCustomer, onWithdrawClick, mode }) => {
+const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ customer, transactions, onClose, onSubmit, onUpdateCustomer, onUpdateTransaction, onDeleteTransaction, onDeleteCustomer, onWithdrawClick, mode, customHolidays }) => {
     const [amount, setAmount] = useState('0');
     const [isClosing, setIsClosing] = useState(false);
     const [isVisible, setIsVisible] = useState(false);
@@ -320,6 +321,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                     onEditClick={() => setIsEditModalOpen(true)}
                                     onEditTransactionClick={handleEditTransactionClick}
                                     onDeleteTransactionClick={handleDeleteTransactionClick}
+                                    customHolidays={customHolidays}
                                 />
                             ) : (
                                 <SaverDetailView

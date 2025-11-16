@@ -1,6 +1,7 @@
+
 // List of Indonesian national holidays for 2024 in YYYY-MM-DD format.
 // This is used to exclude these days from "missed payment" calculations.
-export const holidays: string[] = [
+export const staticHolidays: string[] = [
     '2024-01-01', // New Year's Day
     '2024-02-08', // Isra Mi'raj
     '2024-02-10', // Chinese New Year
@@ -19,3 +20,7 @@ export const holidays: string[] = [
     '2024-09-16', // Prophet Muhammad's Birthday
     '2024-12-25', // Christmas Day
 ];
+
+export const isDateHoliday = (dateString: string, customHolidays: string[] = []): boolean => {
+    return staticHolidays.includes(dateString) || customHolidays.includes(dateString);
+};

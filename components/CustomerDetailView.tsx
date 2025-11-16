@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { Customer, Transaction, TransactionType } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { TransactionIcon } from './TransactionIcon';
-import { holidays } from '../utils/holidays';
+import { isDateHoliday } from '../utils/holidays';
 
 interface CustomerDetailViewProps {
   customer: Customer;
@@ -12,6 +12,7 @@ interface CustomerDetailViewProps {
   onEditClick: () => void;
   onEditTransactionClick: (transaction: Transaction) => void;
   onDeleteTransactionClick: (transaction: Transaction) => void;
+  customHolidays: string[];
 }
 
 const BentoCard: React.FC<{ children: React.ReactNode; className?: string; span?: string }> = ({ children, className = '', span = 'col-span-4' }) => (
@@ -20,7 +21,7 @@ const BentoCard: React.FC<{ children: React.ReactNode; className?: string; span?
     </div>
 );
 
-const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, transactions, onClose, onEditClick, onEditTransactionClick, onDeleteTransactionClick }) => {
+const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, transactions, onClose, onEditClick, onEditTransactionClick, onDeleteTransactionClick, customHolidays }) => {
     const [viewMode, setViewMode] = useState<'transactions' | 'missed_payments'>('transactions');
     
     const customerTransactions = useMemo(() => {
@@ -80,8 +81,8 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
                 const dayOfWeek = d.getDay();
                 const dateString = toLocalYMD(d);
 
-                // Check if it's a weekday (Mon-Fri) and not a holiday
-                if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidays.includes(dateString)) {
+                // Check if it's a weekday (Mon-Fri) and not a holiday (static + custom)
+                if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isDateHoliday(dateString, customHolidays)) {
                     // This is an expected payment day. Check if payment was made on this day (using local string match).
                     if (!repaymentDates.has(dateString)) {
                         missedDates.push(new Date(d));
@@ -106,7 +107,7 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
             installmentsPaid: paidInstallments,
             loanProgressPercentage: progressPercentage
         };
-    }, [customerTransactions, customer]);
+    }, [customerTransactions, customer, customHolidays]);
 
     const formatDate = (date: Date | string) => {
         const dateObj = typeof date === 'string' ? new Date(date) : date; 
