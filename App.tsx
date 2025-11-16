@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard';
 import Customers from './components/Customers';
 import BottomNav from './components/BottomNav';
 import Modal from './components/Modal';
-import CustomerForm from './components/CustomerForm';
+import CustomerForm, { CustomerFormData } from './components/CustomerForm';
 import TransactionNumpadModal from './components/TransactionNumpadModal';
 import Savings from './components/Savings';
 import SaverForm from './components/SaverForm';
@@ -175,11 +175,6 @@ const App: React.FC = () => {
 
       if (error) {
         console.error("Sync error for item:", item, error);
-        // If error is duplicate key (already synced), ignore. Otherwise, keep in queue?
-        // For simplicity, if it's a real network error, we might push back to failedItems.
-        // If integrity error, we might discard. 
-        // Here assuming if online and failed, it might be data conflict or Logic.
-        // We will NOT add it back to avoid infinite loops unless strictly network error.
       }
     }
     
@@ -209,7 +204,6 @@ const App: React.FC = () => {
     };
   }, []);
   
-  // Update local storage whenever state changes to ensure offline view is up to date
   useEffect(() => {
       if (customers.length > 0) saveToLocal(STORAGE_KEYS.CUSTOMERS, customers);
   }, [customers]);
@@ -238,27 +232,59 @@ const App: React.FC = () => {
     return new Map(customers.map(c => [c.id, c]));
   }, [customers]);
   
-  const addCustomer = async (customerData: Omit<Customer, 'id' | 'status' | 'role'>) => {
+  const addCustomer = async (customerData: CustomerFormData) => {
+    // Destructure to remove disbursementMethod from the customer object we save to DB
+    const { disbursementMethod, ...data } = customerData;
+
     const newCustomer: Customer = {
-      ...customerData,
+      ...data,
       id: `CUST-${new Date().getTime()}`,
       status: 'aktif',
       role: 'borrower', 
     };
 
+    // Determine transaction date (use current time if loan date is today, else start of that day)
+    const todayStr = new Date().toISOString().split('T')[0];
+    let transactionDateIso = newCustomer.loanDate === todayStr 
+        ? new Date().toISOString() 
+        : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
+
+    // Create initial LOAN transaction
+    const newTransaction: Transaction = {
+        id: `TRX-${new Date().getTime()}`,
+        customerId: newCustomer.id,
+        type: TransactionType.LOAN,
+        amount: newCustomer.loanAmount,
+        date: transactionDateIso,
+        description: 'Pinjaman Awal',
+        paymentMethod: disbursementMethod || 'Cash',
+        isEdited: false
+    };
+
     // Optimistic UI Update
     setCustomers(prev => [...prev, newCustomer]);
+    setTransactions(prev => [...prev, newTransaction]);
     setIsCustomerModalOpen(false);
 
     if (navigator.onLine) {
-        const { error } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
-        if (error) console.error("Error adding customer online:", error);
+        const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
+        if (cError) console.error("Error adding customer online:", cError);
+
+        const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+        if (tError) console.error("Error adding initial loan transaction online:", tError);
+
     } else {
         addToSyncQueue({
             id: newCustomer.id,
             action: 'INSERT',
             table: 'customers',
             payload: mapCustomerToDB(newCustomer)
+        });
+        addToSyncQueue({
+            id: newTransaction.id,
+            action: 'INSERT',
+            table: 'transactions',
+            payload: mapTransactionToDB(newTransaction)
         });
     }
   };

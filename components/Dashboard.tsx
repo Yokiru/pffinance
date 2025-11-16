@@ -48,12 +48,15 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
         return displayedDate;
     }, [dateRange, displayedDate]);
 
-    const { totalUang, dailyRepayments, dailySavings, breakdowns } = useMemo(() => {
+    const { totalUang, dailyRepayments, dailySavings, dailyLoans, breakdowns } = useMemo(() => {
         let dailyRepaymentsTotal = 0;
         const dailyRepaymentsBreakdown = { cash: 0, transfer: 0 };
 
         let dailySavingsTotal = 0;
         const dailySavingsBreakdown = { cash: 0, transfer: 0 };
+
+        let dailyLoansTotal = 0;
+        const dailyLoansBreakdown = { cash: 0, transfer: 0 };
 
         dailyTransactions.forEach(t => {
             if (t.type === TransactionType.REPAYMENT) {
@@ -77,23 +80,34 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 } else {
                     dailySavingsBreakdown.transfer -= t.amount;
                 }
+            } else if (t.type === TransactionType.LOAN) {
+                dailyLoansTotal += t.amount;
+                if (t.paymentMethod === 'Cash') {
+                    dailyLoansBreakdown.cash += t.amount;
+                } else {
+                    dailyLoansBreakdown.transfer += t.amount;
+                }
             }
         });
 
-        const totalUangTotal = dailyRepaymentsTotal + dailySavingsTotal;
+        // Calculate Net Total: (Repayments + Net Savings) - Loans
+        const totalUangTotal = dailyRepaymentsTotal + dailySavingsTotal - dailyLoansTotal;
+        
         const totalUangBreakdown = {
-            cash: dailyRepaymentsBreakdown.cash + dailySavingsBreakdown.cash,
-            transfer: dailyRepaymentsBreakdown.transfer + dailySavingsBreakdown.transfer,
+            cash: dailyRepaymentsBreakdown.cash + dailySavingsBreakdown.cash - dailyLoansBreakdown.cash,
+            transfer: dailyRepaymentsBreakdown.transfer + dailySavingsBreakdown.transfer - dailyLoansBreakdown.transfer,
         };
         
         return { 
             totalUang: totalUangTotal,
             dailyRepayments: dailyRepaymentsTotal,
             dailySavings: dailySavingsTotal,
+            dailyLoans: dailyLoansTotal,
             breakdowns: {
                 totalUang: totalUangBreakdown,
                 dailyRepayments: dailyRepaymentsBreakdown,
                 dailySavings: dailySavingsBreakdown,
+                dailyLoans: dailyLoansBreakdown,
             }
         };
     }, [dailyTransactions]);
@@ -185,6 +199,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
     const totalUangStr = formatCurrency(totalUang);
     const dailyRepaymentsStr = formatCurrency(dailyRepayments);
     const dailySavingsStr = formatCurrency(dailySavings);
+    const dailyLoansStr = formatCurrency(dailyLoans);
 
     const headerFontSize = useMemo(() => {
         const len = totalUangStr.length;
@@ -203,6 +218,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
 
     const repaymentsFontSize = getCardFontSize(dailyRepaymentsStr.length);
     const savingsFontSize = getCardFontSize(dailySavingsStr.length);
+    const loansFontSize = getCardFontSize(dailyLoansStr.length);
 
     return (
         <div className="pb-24">
@@ -213,7 +229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         <h1 className={`${headerFontSize} font-bold text-white tracking-tighter mb-2 transition-all duration-300`}>
                             {totalUangStr}
                         </h1>
-                        <p className="text-white/80 text-xs font-bold tracking-widest uppercase">UANG MASUK</p>
+                        <p className="text-white/80 text-xs font-bold tracking-widest uppercase">TOTAL UANG</p>
                     </div>
                     
                     {/* Date Picker Button */}
@@ -283,7 +299,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             </svg>
                         </div>
                     </div>
-                    <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN</h4>
+                    <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN (NET)</h4>
                     <div className="text-sm space-y-2">
                          <div className="flex justify-between items-center border-b border-dashed border-white/20 pb-2">
                             <span className="text-gray-500 font-medium">Cash</span>
@@ -292,6 +308,31 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         <div className="flex justify-between items-center">
                             <span className="text-gray-500 font-medium">Transfer</span>
                             <span className="font-bold text-white text-base">{formatCurrency(breakdowns.dailySavings.transfer)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                 {/* Uang Keluar/Pinjaman Card (Purple) */}
+                 <div className="bg-[#E0C6FF] rounded-3xl p-5 shadow-[0_20px_40px_-15px_rgba(196,181,253,0.3)]">
+                    <div className="flex justify-between items-start mb-2">
+                        <p className={`${loansFontSize} font-bold text-black tracking-tight transition-all duration-300`}>
+                            {dailyLoansStr}
+                        </p>
+                        <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center text-black self-start flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                            </svg>
+                        </div>
+                    </div>
+                    <h4 className="text-black/70 text-xs font-bold tracking-widest uppercase mb-4">UANG KELUAR (PINJAMAN)</h4>
+                    <div className="text-sm space-y-2">
+                        <div className="flex justify-between items-center border-b border-dashed border-black/10 pb-2">
+                            <span className="text-black/60 font-medium">Cash</span>
+                            <span className="font-bold text-black text-base">{formatCurrency(breakdowns.dailyLoans.cash)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-black/60 font-medium">Transfer</span>
+                            <span className="font-bold text-black text-base">{formatCurrency(breakdowns.dailyLoans.transfer)}</span>
                         </div>
                     </div>
                 </div>
