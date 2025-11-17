@@ -27,11 +27,22 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ customers, onSubmit, 
   const [type, setType] = useState<TransactionType>(initialData?.type || defaultType || TransactionType.REPAYMENT);
   const [amount, setAmount] = useState(initialData ? formatNumberInput(String(initialData.amount)) : '');
   const [description, setDescription] = useState(initialData?.description || '');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Transfer'>(initialData?.paymentMethod || 'Cash');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Transfer' | 'Potong Tagihan' | 'Ambil Kas'>(initialData?.paymentMethod || 'Cash');
   const [date, setDate] = useState(initialData ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isEditMode = !!initialData;
+
+  // Set default payment method based on type
+  useEffect(() => {
+    if (!initialData) {
+        if (type === TransactionType.LOAN) {
+            setPaymentMethod('Potong Tagihan');
+        } else {
+            setPaymentMethod('Cash');
+        }
+    }
+  }, [type, initialData]);
 
   useEffect(() => {
     if (initialData) {
@@ -86,21 +97,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ customers, onSubmit, 
         </select>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {isEditMode ? (
-            <div>
-              <label htmlFor="paymentMethod" className="block text-sm font-medium text-gray-700">Metode Pembayaran</label>
-              <select
-                id="paymentMethod"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as 'Cash' | 'Transfer')}
-                className={inputClasses}
-                required
-              >
-                <option value="Cash">Cash</option>
-                <option value="Transfer">Transfer</option>
-              </select>
-            </div>
-        ) : !defaultType ? (
+        {/* Type Selection */}
+        {!defaultType && !isEditMode ? (
             <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700">Tipe</label>
                 <select
@@ -116,6 +114,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ customers, onSubmit, 
                 </select>
             </div>
         ) : null}
+
         <div className={!isEditMode && defaultType ? 'md:col-span-2' : ''}>
             <label htmlFor="date" className="block text-sm font-medium text-gray-700">Tanggal</label>
             <input
@@ -128,21 +127,32 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ customers, onSubmit, 
             />
         </div>
       </div>
-      {!isEditMode && (
-        <div>
+
+      {/* Payment Method Selection */}
+      <div>
           <label htmlFor="paymentMethod" className="block text-sm font-medium text-gray-700">Metode Pembayaran</label>
           <select
             id="paymentMethod"
             value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as 'Cash' | 'Transfer')}
+            onChange={(e) => setPaymentMethod(e.target.value as any)}
             className={inputClasses}
             required
           >
-            <option value="Cash">Cash</option>
-            <option value="Transfer">Transfer</option>
+            {type === TransactionType.LOAN ? (
+                <>
+                    <option value="Potong Tagihan">Potong Tagihan (Uang Hari Ini)</option>
+                    <option value="Ambil Kas">Ambil Kas (Uang Kemarin)</option>
+                    <option value="Transfer">Transfer</option>
+                </>
+            ) : (
+                <>
+                    <option value="Cash">Cash</option>
+                    <option value="Transfer">Transfer</option>
+                </>
+            )}
           </select>
-        </div>
-      )}
+      </div>
+
       <div>
         <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Jumlah (IDR)</label>
         <input

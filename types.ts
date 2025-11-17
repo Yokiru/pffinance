@@ -26,6 +26,6 @@ export interface Transaction {
   amount: number;
   date: string;
   description: string;
-  paymentMethod: 'Cash' | 'Transfer';
+  paymentMethod: 'Cash' | 'Transfer' | 'Potong Tagihan' | 'Ambil Kas';
   isEdited?: boolean;
 }
