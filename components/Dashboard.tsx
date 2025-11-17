@@ -58,12 +58,19 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
         return displayedDate;
     }, [dateRange, displayedDate]);
 
-    const { totalUang, dailyRepayments, dailySavings, dailyLoans, breakdowns } = useMemo(() => {
+    const { totalUang, dailyRepayments, dailySavings, dailyLoans, breakdowns, savingsCardTotal } = useMemo(() => {
         let dailyRepaymentsTotal = 0;
         const dailyRepaymentsBreakdown = { cash: 0, transfer: 0 };
 
-        let dailySavingsTotal = 0;
-        const dailySavingsBreakdown = { cash: 0, transfer: 0 };
+        let dailySavingsTotal = 0; // Net Total (In - Out) for Total Uang Calculation
+        const dailySavingsBreakdown = { cash: 0, transfer: 0 }; // Net Breakdown for Total Uang Calc
+
+        // Detailed Savings Flow for the Card (Visual only)
+        const dailySavingsFlow = {
+            inCash: 0,
+            outCash: 0,
+            netTransfer: 0
+        };
 
         // For loans, we track total amount for the "Uang Keluar" card
         let dailyLoansTotal = 0;
@@ -83,15 +90,28 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 dailySavingsTotal += t.amount;
                 if (t.paymentMethod === 'Cash') {
                     dailySavingsBreakdown.cash += t.amount;
+                    dailySavingsFlow.inCash += t.amount;
                 } else {
                     dailySavingsBreakdown.transfer += t.amount;
+                    dailySavingsFlow.netTransfer += t.amount;
                 }
             } else if (t.type === TransactionType.WITHDRAWAL) {
-                dailySavingsTotal -= t.amount;
                  if (t.paymentMethod === 'Cash') {
+                    // Cash withdrawal reduces Total Uang (Physical money out)
+                    dailySavingsTotal -= t.amount;
                     dailySavingsBreakdown.cash -= t.amount;
+                    
+                    // Flow tracking
+                    dailySavingsFlow.outCash += t.amount;
                 } else {
-                    dailySavingsBreakdown.transfer -= t.amount;
+                    // Transfer/Other withdrawal: 
+                    // Does NOT reduce "Total Uang (Di Tangan)" because it doesn't take from today's physical collection.
+                    // It is treated as an external flow.
+                    
+                    // We do NOT subtract from dailySavingsTotal or dailySavingsBreakdown.transfer for the Header.
+                    
+                    // However, we still track it in the Flow Card's Net Transfer to show the account movement.
+                    dailySavingsFlow.netTransfer -= t.amount;
                 }
             } else if (t.type === TransactionType.LOAN) {
                 dailyLoansTotal += t.amount;
@@ -109,6 +129,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
         });
 
         // Calculate Net Total: (Repayments + Net Savings) - Loans (Only those cut from collection)
+        // Note: dailySavingsTotal now only includes Cash Withdrawals (and all Deposits), essentially effectively excluding Transfer Withdrawals from the header total.
         const totalUangTotal = dailyRepaymentsTotal + dailySavingsTotal - dailyLoansCutFromCollection;
         
         const totalUangBreakdown = {
@@ -116,16 +137,21 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
             transfer: dailyRepaymentsBreakdown.transfer + dailySavingsBreakdown.transfer - dailyLoansBreakdown.transfer,
         };
         
+        // Recalculate pure daily savings total for the card (Net) including all flows for the card big number
+        const savingsCardTotal = dailySavingsFlow.inCash - dailySavingsFlow.outCash + dailySavingsFlow.netTransfer;
+
         return { 
             totalUang: totalUangTotal,
             dailyRepayments: dailyRepaymentsTotal,
-            dailySavings: dailySavingsTotal,
+            dailySavings: dailySavingsTotal, 
             dailyLoans: dailyLoansTotal,
+            savingsCardTotal,
             breakdowns: {
                 totalUang: totalUangBreakdown,
                 dailyRepayments: dailyRepaymentsBreakdown,
                 dailySavings: dailySavingsBreakdown,
                 dailyLoans: dailyLoansBreakdown,
+                dailySavingsFlow: dailySavingsFlow
             }
         };
     }, [dailyTransactions]);
@@ -216,7 +242,8 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
     // Helper for dynamic font sizes
     const totalUangStr = formatCurrency(totalUang);
     const dailyRepaymentsStr = formatCurrency(dailyRepayments);
-    const dailySavingsStr = formatCurrency(dailySavings);
+    const dailySavingsStr = formatCurrency(savingsCardTotal, true); 
+    
     const dailyLoansStr = formatCurrency(dailyLoans);
 
     const headerFontSize = useMemo(() => {
@@ -309,7 +336,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 </div>
 
                 {/* Uang Tabungan Card (Dark) */}
-                <div className="bg-[#1B1B1B] rounded-3xl p-5 shadow-xl">
+                <div className="bg-[#1B1B1B] rounded-3xl p-5 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)]">
                     <div className="flex justify-between items-start mb-2">
                         <p className={`${savingsFontSize} font-bold text-white tracking-tight transition-all duration-300`}>
                             {dailySavingsStr}
@@ -318,15 +345,19 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
                         </div>
                     </div>
-                    <h4 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN</h4>
+                    <h4 className="text-gray-500 text-xs font-bold tracking-widest uppercase mb-4">TABUNGAN (FLOW)</h4>
                     <div className="text-sm space-y-2">
-                         <div className="flex justify-between items-center border-b border-dashed border-white/20 pb-2">
-                            <span className="text-gray-500 font-medium">Cash</span>
-                            <span className="font-bold text-white text-base">{formatCurrency(breakdowns.dailySavings.cash)}</span>
+                         <div className="flex justify-between items-center border-b border-dashed border-white/10 pb-2">
+                            <span className="text-gray-400 font-medium">Masuk (Cash)</span>
+                            <span className="font-bold text-gray-400 text-base">+ {formatCurrency(breakdowns.dailySavingsFlow.inCash)}</span>
+                        </div>
+                         <div className="flex justify-between items-center border-b border-dashed border-white/10 pb-2">
+                            <span className="text-gray-400 font-medium">Keluar (Cash)</span>
+                            <span className="font-bold text-gray-400 text-base">- {formatCurrency(breakdowns.dailySavingsFlow.outCash)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-gray-500 font-medium">Transfer</span>
-                            <span className="font-bold text-white text-base">{formatCurrency(breakdowns.dailySavings.transfer)}</span>
+                            <span className="text-gray-400 font-medium">Transfer (Net)</span>
+                            <span className="font-bold text-gray-400 text-base">{formatCurrency(breakdowns.dailySavingsFlow.netTransfer, true)}</span>
                         </div>
                     </div>
                 </div>
@@ -339,7 +370,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                         </p>
                         <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center text-black self-start flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" className="w-6 h-6">
-                                <path d="M160-161.85v-652.61q0-5.46 4.46-7.19 4.46-1.73 8.69.96l28.23 21.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.93 0 9.39-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38-2.92L686-823.69q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l28.23-21.31q4.23-2.69 8.69-.96 4.46 1.73 4.46 7.19v652.61q0 10.16-8.54 14.39t-17-1.92l-15.84-11.24q-4.47-2.92-9.39-2.92-4.92 0-9.38 2.92l-35.08 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-35.07 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.93l-35.08-24.31q-4.46-2.92-9.39-2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38-2.92L274-136.31q-4.46 2.93-9.38 2.93-4.93 0-9.39-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-15.84 11.24q-8.46 6.15-17 1.92T160-161.85Zm120-162.77h400q8.54 0 14.27-5.73t5.73-14.27q0-8.53-5.73-14.26-5.73-5.74-14.27-5.74H280q-8.54 0-14.27 5.74-5.73 5.73-5.73 14.26 0 8.54 5.73 14.27t14.27 5.73ZM280-460h400q8.54 0 14.27-5.73T700-480q0-8.54-5.73-14.27T680-500H280q-8.54 0-14.27 5.73T260-480q0 8.54 5.73 14.27T280-460Zm0-135.38h400q8.54 0 14.27-5.74 5.73-5.73 5.73-14.26 0-8.54-5.73-14.27T680-635.38H280q-8.54 0-14.27 5.73T260-615.38q0 8.53 5.73 14.26 5.73 5.74 14.27 5.74Z"/>
+                                <path d="M160-161.85v-652.61q0-5.46 4.46-7.19 4.46-1.73 8.69.96l28.23 21.31q4.47 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.39-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.93 0 9.39-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.92 0 9.38 2.93l35.08 24.31q4.46 2.92 9.39 2.92 4.92 0 9.38-2.92l35.08-24.31q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38-2.92L686-823.69q4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.08 24.31q4.46 2.92 9.38 2.92 4.92 0 9.39-2.92l28.23-21.31q4.23-2.69 8.69-.96 4.46 1.73 4.46 7.19v652.61q0 10.16-8.54 14.39t-17-1.92l-15.84-11.24q-4.47-2.92-9.39-2.92-4.92 0-9.38 2.92l-35.08 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38 2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-35.07 24.31q-4.46 2.93-9.39 2.93-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.92-9.39-2.92-4.92 0-9.38-2.92l-35.08-24.31q-4.46-2.93 9.38-2.93 4.93 0 9.39 2.93l35.07 24.31q4.47-2.92 9.39-2.92 4.92 0 9.38-2.92L274-136.31q-4.46 2.93-9.38 2.93-4.93 0-9.39-2.93l-35.08-24.31q-4.46-2.92-9.38-2.92-4.92 0-9.39 2.92l-15.84 11.24q-8.46 6.15-17 1.92T160-161.85Zm120-162.77h400q8.54 0 14.27-5.73t5.73-14.27q0-8.53-5.73-14.26-5.73-5.74-14.27-5.74H280q-8.54 0-14.27 5.74-5.73 5.73-5.73 14.26 0 8.54 5.73 14.27t14.27 5.73ZM280-460h400q8.54 0 14.27-5.73T700-480q0-8.54-5.73-14.27T680-500H280q-8.54 0-14.27 5.73T260-480q0 8.54 5.73 14.27T280-460Zm0-135.38h400q8.54 0 14.27-5.74 5.73-5.73 5.73-14.26 0-8.54-5.73-14.27T680-635.38H280q-8.54 0-14.27 5.73T260-615.38q0 8.53 5.73 14.26 5.73 5.74 14.27 5.74Z"/>
                             </svg>
                         </div>
                     </div>
