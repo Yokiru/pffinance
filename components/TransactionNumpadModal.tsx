@@ -27,11 +27,11 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
     const [amount, setAmount] = useState('0');
     const [isClosing, setIsClosing] = useState(false);
     const [isVisible, setIsVisible] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Transfer'>('Cash');
+    const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Transfer' | 'Potong Tagihan' | 'Ambil Kas'>('Cash');
     const [isDetailViewOpen, setIsDetailViewOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-    // State for transaction edit/delete modals, lifted from CustomerDetailView
+    // State for transaction edit/delete modals
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
     const [isEditTransactionModalOpen, setIsEditTransactionModalOpen] = useState(false);
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -39,8 +39,21 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
     // State for customer delete
     const [isDeleteCustomerConfirmOpen, setIsDeleteCustomerConfirmOpen] = useState(false);
     
+    // Initialize payment method based on mode
+    useEffect(() => {
+        if (mode === 'withdrawal') {
+            setPaymentMethod('Potong Tagihan');
+        } else {
+            setPaymentMethod('Cash');
+        }
+    }, [mode]);
+
     const togglePaymentMethod = () => {
-        setPaymentMethod(prev => (prev === 'Cash' ? 'Transfer' : 'Cash'));
+        if (mode === 'withdrawal') {
+             setPaymentMethod(prev => (prev === 'Potong Tagihan' ? 'Ambil Kas' : 'Potong Tagihan'));
+        } else {
+             setPaymentMethod(prev => (prev === 'Cash' ? 'Transfer' : 'Cash'));
+        }
     };
     
     const handleClose = () => {
@@ -232,7 +245,6 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                         className="w-10 h-10 flex items-center justify-center bg-card border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
                                         aria-label="Kembali"
                                     >
-                                        {/* Updated to w-6 h-6 for better touch target visibility */}
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                                         </svg>
@@ -278,11 +290,20 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                 {/* Payment Method "Card" */}
                                 <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center justify-between border border-gray-100">
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'Cash' ? 'bg-green-100' : 'bg-blue-100'}`}>
-                                            {paymentMethod === 'Cash' ? (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                            ) : (
+                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                                            paymentMethod === 'Cash' || paymentMethod === 'Potong Tagihan' ? 'bg-green-100' : 'bg-blue-100'
+                                        }`}>
+                                            {paymentMethod === 'Cash' && (
+                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                            )}
+                                            {paymentMethod === 'Potong Tagihan' && (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm0-5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" /></svg>
+                                            )}
+                                            {paymentMethod === 'Transfer' && (
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                                            )}
+                                            {paymentMethod === 'Ambil Kas' && (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                                             )}
                                         </div>
                                         <div>

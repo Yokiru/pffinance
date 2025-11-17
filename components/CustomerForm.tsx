@@ -231,62 +231,41 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
             {!isEditMode && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Sumber Dana Pencairan</label>
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setDisbursementMethod('Potong Tagihan')}
-                    className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                    className={`relative flex flex-col items-start gap-1 px-4 py-3 rounded-xl border text-left transition-all h-full ${
                       disbursementMethod === 'Potong Tagihan' 
                         ? 'bg-yellow-50 border-yellow-400 text-yellow-900 shadow-sm' 
                         : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${disbursementMethod === 'Potong Tagihan' ? 'bg-yellow-200' : 'bg-gray-100'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${disbursementMethod === 'Potong Tagihan' ? 'bg-yellow-200' : 'bg-gray-100'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm0-5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" /></svg>
                     </div>
-                    <div>
-                        <span className="block text-sm font-bold">Potong Tagihan Hari Ini</span>
-                        <span className="block text-[10px] opacity-70">Mengurangi total uang setoran hari ini</span>
-                    </div>
-                    {disbursementMethod === 'Potong Tagihan' && <div className="absolute top-3 right-3 text-yellow-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                    <span className="block text-sm font-bold leading-tight">Potong Tagihan</span>
+                    <span className="block text-[10px] opacity-70">Uang setoran hari ini</span>
+                    
+                    {disbursementMethod === 'Potong Tagihan' && <div className="absolute top-2 right-2 text-yellow-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setDisbursementMethod('Ambil Kas')}
-                    className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                    className={`relative flex flex-col items-start gap-1 px-4 py-3 rounded-xl border text-left transition-all h-full ${
                       disbursementMethod === 'Ambil Kas' 
                         ? 'bg-purple-50 border-purple-400 text-purple-900 shadow-sm' 
                         : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${disbursementMethod === 'Ambil Kas' ? 'bg-purple-200' : 'bg-gray-100'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${disbursementMethod === 'Ambil Kas' ? 'bg-purple-200' : 'bg-gray-100'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                     </div>
-                     <div>
-                        <span className="block text-sm font-bold">Ambil dari Kas Besar / Uang Kemarin</span>
-                        <span className="block text-[10px] opacity-70">Tidak mengurangi setoran hari ini</span>
-                    </div>
-                    {disbursementMethod === 'Ambil Kas' && <div className="absolute top-3 right-3 text-purple-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setDisbursementMethod('Transfer')}
-                    className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
-                      disbursementMethod === 'Transfer' 
-                        ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-sm' 
-                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${disbursementMethod === 'Transfer' ? 'bg-blue-200' : 'bg-gray-100'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
-                    </div>
-                     <div>
-                        <span className="block text-sm font-bold">Transfer Bank</span>
-                        <span className="block text-[10px] opacity-70">Mutasi rekening</span>
-                    </div>
-                    {disbursementMethod === 'Transfer' && <div className="absolute top-3 right-3 text-blue-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                     <span className="block text-sm font-bold leading-tight">Ambil Kas</span>
+                     <span className="block text-[10px] opacity-70">Kas Besar / Transfer</span>
+                    
+                    {disbursementMethod === 'Ambil Kas' && <div className="absolute top-2 right-2 text-purple-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
                   </button>
                 </div>
               </div>

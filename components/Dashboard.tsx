@@ -58,25 +58,31 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
         return displayedDate;
     }, [dateRange, displayedDate]);
 
-    const { totalUang, dailyRepayments, dailySavings, dailyLoans, breakdowns, savingsCardTotal } = useMemo(() => {
+    const { totalUang, dailyRepayments, dailySavings, breakdowns, savingsCardTotal, totalOutflow } = useMemo(() => {
+        // 1. Repayments (Uang Tagihan)
         let dailyRepaymentsTotal = 0;
         const dailyRepaymentsBreakdown = { cash: 0, transfer: 0 };
 
-        let dailySavingsTotal = 0; // Net Total (In - Out) for Total Uang Calculation
-        const dailySavingsBreakdown = { cash: 0, transfer: 0 }; // Net Breakdown for Total Uang Calc
-
-        // Detailed Savings Flow for the Card (Visual only)
+        // 2. Savings (Tabungan)
+        // We track Inflow for the card, and Net Flow for the "Total Uang" calculation
         const dailySavingsFlow = {
             inCash: 0,
-            outCash: 0,
-            netTransfer: 0
+            inTransfer: 0,
+            outCash: 0, // Withdrawals taken from daily collection
+            outTransfer: 0 // Withdrawals taken from reserve/transfer
         };
 
-        // For loans, we track total amount for the "Uang Keluar" card
-        let dailyLoansTotal = 0;
-        // But for "Total Uang" (Cash in Hand), we only care about what was cut from today's collection
-        let dailyLoansCutFromCollection = 0;
-        const dailyLoansBreakdown = { cash: 0, transfer: 0 };
+        // 3. Outflow Breakdown (Structured by Type -> Source)
+        const outflowBreakdown = {
+            loans: {
+                potongTagihan: 0, // Reduces daily cash
+                ambilKas: 0       // From reserve/transfer (doesn't reduce daily cash)
+            },
+            withdrawals: {
+                potongTagihan: 0, // Reduces daily cash (Cash withdrawal)
+                ambilKas: 0       // From reserve/transfer (Transfer withdrawal)
+            }
+        };
 
         dailyTransactions.forEach(t => {
             if (t.type === TransactionType.REPAYMENT) {
@@ -86,72 +92,79 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 } else {
                     dailyRepaymentsBreakdown.transfer += t.amount;
                 }
-            } else if (t.type === TransactionType.SAVINGS) {
-                dailySavingsTotal += t.amount;
+            } 
+            else if (t.type === TransactionType.SAVINGS) {
                 if (t.paymentMethod === 'Cash') {
-                    dailySavingsBreakdown.cash += t.amount;
                     dailySavingsFlow.inCash += t.amount;
                 } else {
-                    dailySavingsBreakdown.transfer += t.amount;
-                    dailySavingsFlow.netTransfer += t.amount;
+                    dailySavingsFlow.inTransfer += t.amount;
                 }
-            } else if (t.type === TransactionType.WITHDRAWAL) {
+            } 
+            else if (t.type === TransactionType.WITHDRAWAL) {
+                 // Logic: If 'Cash', it comes from the daily bag (Potong Tagihan equivalent). 
+                 // If 'Transfer', it comes from bank/reserve (Ambil Kas equivalent).
                  if (t.paymentMethod === 'Cash') {
-                    // Cash withdrawal reduces Total Uang (Physical money out)
-                    dailySavingsTotal -= t.amount;
-                    dailySavingsBreakdown.cash -= t.amount;
-                    
-                    // Flow tracking
                     dailySavingsFlow.outCash += t.amount;
+                    outflowBreakdown.withdrawals.potongTagihan += t.amount;
                 } else {
-                    // Transfer/Other withdrawal: 
-                    // Does NOT reduce "Total Uang (Di Tangan)" because it doesn't take from today's physical collection.
-                    // It is treated as an external flow.
-                    
-                    // We do NOT subtract from dailySavingsTotal or dailySavingsBreakdown.transfer for the Header.
-                    
-                    // However, we still track it in the Flow Card's Net Transfer to show the account movement.
-                    dailySavingsFlow.netTransfer -= t.amount;
+                    dailySavingsFlow.outTransfer += t.amount;
+                    outflowBreakdown.withdrawals.ambilKas += t.amount;
                 }
-            } else if (t.type === TransactionType.LOAN) {
-                dailyLoansTotal += t.amount;
-                
-                // Logic update: Only subtract from Net Cash if method is 'Potong Tagihan'
-                // 'Ambil Kas' means money came from vault/yesterday, so it doesn't reduce today's collection in hand.
+            } 
+            else if (t.type === TransactionType.LOAN) {
                 if (t.paymentMethod === 'Potong Tagihan') {
-                    dailyLoansCutFromCollection += t.amount;
-                    dailyLoansBreakdown.cash += t.amount; // Treated as cash outflow from hand
-                } else if (t.paymentMethod === 'Transfer') {
-                    dailyLoansBreakdown.transfer += t.amount;
+                    outflowBreakdown.loans.potongTagihan += t.amount;
+                } else {
+                    // Ambil Kas, Transfer, or generic Cash (treated as Reserve/Capital for loans usually)
+                    outflowBreakdown.loans.ambilKas += t.amount;
                 }
-                // 'Ambil Kas' contributes to dailyLoansTotal but NOT to dailyLoansCutFromCollection
             }
         });
 
-        // Calculate Net Total: (Repayments + Net Savings) - Loans (Only those cut from collection)
-        // Note: dailySavingsTotal now only includes Cash Withdrawals (and all Deposits), essentially effectively excluding Transfer Withdrawals from the header total.
-        const totalUangTotal = dailyRepaymentsTotal + dailySavingsTotal - dailyLoansCutFromCollection;
+        // --- CALCULATIONS ---
+
+        // Total Uang Calculation (The big number at the top)
+        // Formula: (Repayments Cash + Savings In Cash) - (Loans Potong Tagihan + Withdrawals Cash)
+        const totalUangCash = 
+            (dailyRepaymentsBreakdown.cash + dailySavingsFlow.inCash) - 
+            (outflowBreakdown.loans.potongTagihan + outflowBreakdown.withdrawals.potongTagihan);
+        
+        const totalUangTransfer = 
+            (dailyRepaymentsBreakdown.transfer + dailySavingsFlow.inTransfer); 
+            // Note: We generally don't subtract outflows from "Total Uang" transfer part 
+            // because "Total Uang" usually represents "Cash in Hand" + "Income via Transfer".
+            // Expenses via transfer are just recorded, they don't "reduce" the incoming transfer log usually.
+            // But strictly speaking, Net Transfer would be In - Out. 
+            // For this dashboard, let's keep Transfer as "Income via Transfer" for simplicity, 
+            // or Net if requested. Let's stick to Income for Transfer to match "Total Uang" concept.
+
+        const totalUangTotal = totalUangCash + totalUangTransfer;
         
         const totalUangBreakdown = {
-            cash: dailyRepaymentsBreakdown.cash + dailySavingsBreakdown.cash - dailyLoansBreakdown.cash,
-            transfer: dailyRepaymentsBreakdown.transfer + dailySavingsBreakdown.transfer - dailyLoansBreakdown.transfer,
+            cash: totalUangCash,
+            transfer: totalUangTransfer,
         };
         
-        // Recalculate pure daily savings total for the card (Net) including all flows for the card big number
-        const savingsCardTotal = dailySavingsFlow.inCash - dailySavingsFlow.outCash + dailySavingsFlow.netTransfer;
+        // Savings Card Total (Only Inflow)
+        const dailySavingsTotal = dailySavingsFlow.inCash + dailySavingsFlow.inTransfer; // Used for "Uang Masuk" logic
+        const savingsCardTotal = dailySavingsTotal;
+        
+        // Total Outflow Card
+        const totalLoans = outflowBreakdown.loans.potongTagihan + outflowBreakdown.loans.ambilKas;
+        const totalWithdrawals = outflowBreakdown.withdrawals.potongTagihan + outflowBreakdown.withdrawals.ambilKas;
+        const totalOutflowVal = totalLoans + totalWithdrawals;
 
         return { 
             totalUang: totalUangTotal,
             dailyRepayments: dailyRepaymentsTotal,
             dailySavings: dailySavingsTotal, 
-            dailyLoans: dailyLoansTotal,
             savingsCardTotal,
+            totalOutflow: totalOutflowVal,
             breakdowns: {
                 totalUang: totalUangBreakdown,
                 dailyRepayments: dailyRepaymentsBreakdown,
-                dailySavings: dailySavingsBreakdown,
-                dailyLoans: dailyLoansBreakdown,
-                dailySavingsFlow: dailySavingsFlow
+                dailySavingsFlow: dailySavingsFlow,
+                outflow: outflowBreakdown
             }
         };
     }, [dailyTransactions]);
@@ -242,9 +255,8 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
     // Helper for dynamic font sizes
     const totalUangStr = formatCurrency(totalUang);
     const dailyRepaymentsStr = formatCurrency(dailyRepayments);
-    const dailySavingsStr = formatCurrency(savingsCardTotal, true); 
-    
-    const dailyLoansStr = formatCurrency(dailyLoans);
+    const dailySavingsStr = formatCurrency(savingsCardTotal); 
+    const totalOutflowStr = formatCurrency(totalOutflow);
 
     const headerFontSize = useMemo(() => {
         const len = totalUangStr.length;
@@ -256,25 +268,25 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
 
     const getCardFontSize = (len: number) => {
         if (len > 16) return 'text-xl';
-        if (len > 13) return 'text-2xl';
+        if (len > 13) return 'text-2xl'; 
         if (len > 10) return 'text-3xl'; 
         return 'text-4xl';
     };
 
     const repaymentsFontSize = getCardFontSize(dailyRepaymentsStr.length);
     const savingsFontSize = getCardFontSize(dailySavingsStr.length);
-    const loansFontSize = getCardFontSize(dailyLoansStr.length);
+    const outflowFontSize = getCardFontSize(totalOutflowStr.length);
 
     return (
         <div className="pb-24">
             {/* Header Section with Overlap Capability */}
             <div className="bg-black -mx-3 -mt-3 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8 px-6 pt-14 pb-28 relative z-0 shadow-2xl">
-                <div className="flex justify-between items-start gap-6 mb-6">
+                <div className="flex justify-between items-start gap-6 mb-4">
                     <div className="flex flex-col flex-1">
-                        <h1 className={`${headerFontSize} font-bold text-white tracking-tighter mb-2 transition-all duration-300`}>
+                        <h1 className={`${headerFontSize} font-bold text-white tracking-tight mb-2 transition-all duration-300 leading-none`}>
                             {totalUangStr}
                         </h1>
-                        <p className="text-white/80 text-xs font-bold tracking-widest uppercase">TOTAL UANG (DI TANGAN)</p>
+                        <p className="text-white/80 text-xs font-bold tracking-widest uppercase">TOTAL UANG</p>
                     </div>
                     
                     <div className="flex flex-col gap-2">
@@ -294,8 +306,8 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 </div>
                 
                 {/* Breakdown Section (Inside Header) */}
-                <div className="text-sm space-y-3 px-1">
-                    <div className="flex justify-between items-center border-b border-dashed border-gray-800 pb-3">
+                <div className="text-sm space-y-2 px-1 pb-2">
+                    <div className="flex justify-between items-center border-b border-dashed border-gray-800 pb-2">
                         <span className="text-gray-400 font-medium">Cash (Fisik)</span>
                         <span className="font-bold text-white text-lg">{formatCurrency(breakdowns.totalUang.cash)}</span>
                     </div>
@@ -345,28 +357,24 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
                         </div>
                     </div>
-                    <h4 className="text-gray-500 text-xs font-bold tracking-widest uppercase mb-4">TABUNGAN (FLOW)</h4>
+                    <h4 className="text-gray-500 text-xs font-bold tracking-widest uppercase mb-4">UANG TABUNGAN (MASUK)</h4>
                     <div className="text-sm space-y-2">
                          <div className="flex justify-between items-center border-b border-dashed border-white/10 pb-2">
-                            <span className="text-gray-400 font-medium">Masuk (Cash)</span>
-                            <span className="font-bold text-gray-400 text-base">+ {formatCurrency(breakdowns.dailySavingsFlow.inCash)}</span>
-                        </div>
-                         <div className="flex justify-between items-center border-b border-dashed border-white/10 pb-2">
-                            <span className="text-gray-400 font-medium">Keluar (Cash)</span>
-                            <span className="font-bold text-gray-400 text-base">- {formatCurrency(breakdowns.dailySavingsFlow.outCash)}</span>
+                            <span className="text-gray-400 font-medium">Cash</span>
+                            <span className="font-bold text-gray-400 text-base">{formatCurrency(breakdowns.dailySavingsFlow.inCash)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-gray-400 font-medium">Transfer (Net)</span>
-                            <span className="font-bold text-gray-400 text-base">{formatCurrency(breakdowns.dailySavingsFlow.netTransfer, true)}</span>
+                            <span className="text-gray-400 font-medium">Transfer</span>
+                            <span className="font-bold text-gray-400 text-base">{formatCurrency(breakdowns.dailySavingsFlow.inTransfer)}</span>
                         </div>
                     </div>
                 </div>
 
-                 {/* Uang Keluar/Pinjaman Card (Purple) */}
+                 {/* Uang Keluar Unified Card (Purple) - UPDATED STRUCTURE */}
                  <div className="bg-[#E0C6FF] rounded-3xl p-5 shadow-[0_20px_40px_-15px_rgba(196,181,253,0.3)]">
                     <div className="flex justify-between items-start mb-2">
-                        <p className={`${loansFontSize} font-bold text-black tracking-tight transition-all duration-300`}>
-                            {dailyLoansStr}
+                        <p className={`${outflowFontSize} font-bold text-black tracking-tight transition-all duration-300`}>
+                            {totalOutflowStr}
                         </p>
                         <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center text-black self-start flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" className="w-6 h-6">
@@ -374,19 +382,40 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                             </svg>
                         </div>
                     </div>
-                    <h4 className="text-black/70 text-xs font-bold tracking-widest uppercase mb-4">UANG KELUAR (PINJAMAN)</h4>
-                    <div className="text-sm space-y-2">
-                        <div className="flex justify-between items-center border-b border-dashed border-black/10 pb-2">
-                            <span className="text-black/60 font-medium">Potong Tagihan</span>
-                            <span className="font-bold text-black text-base">{formatCurrency(breakdowns.dailyLoans.cash)}</span>
+                    <h4 className="text-black/70 text-xs font-bold tracking-widest uppercase mb-4">TOTAL UANG KELUAR</h4>
+                    
+                    <div className="text-sm space-y-4">
+                        {/* SECTION 1: PINJAMAN */}
+                        <div>
+                            <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest mb-1">PINJAMAN</p>
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-black/60 font-medium">Potong Tagihan</span>
+                                    <span className="font-bold text-black text-base">{formatCurrency(breakdowns.outflow.loans.potongTagihan)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-black/60 font-medium">Ambil Kas</span>
+                                    <span className="font-bold text-black text-base">{formatCurrency(breakdowns.outflow.loans.ambilKas)}</span>
+                                </div>
+                            </div>
                         </div>
-                         <div className="flex justify-between items-center border-b border-dashed border-black/10 pb-2">
-                            <span className="text-black/60 font-medium">Ambil Kas</span>
-                            <span className="font-bold text-black text-base">{formatCurrency(dailyLoans - breakdowns.dailyLoans.cash - breakdowns.dailyLoans.transfer)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-black/60 font-medium">Transfer</span>
-                            <span className="font-bold text-black text-base">{formatCurrency(breakdowns.dailyLoans.transfer)}</span>
+
+                         {/* Divider */}
+                        <div className="border-b border-dashed border-black/10"></div>
+
+                        {/* SECTION 2: TARIK TABUNGAN */}
+                        <div>
+                             <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest mb-1">TARIK TABUNGAN</p>
+                             <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-black/60 font-medium">Potong Tagihan</span>
+                                    <span className="font-bold text-black text-base">{formatCurrency(breakdowns.outflow.withdrawals.potongTagihan)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-black/60 font-medium">Ambil Kas</span>
+                                    <span className="font-bold text-black text-base">{formatCurrency(breakdowns.outflow.withdrawals.ambilKas)}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

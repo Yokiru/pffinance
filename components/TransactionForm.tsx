@@ -36,7 +36,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ customers, onSubmit, 
   // Set default payment method based on type
   useEffect(() => {
     if (!initialData) {
-        if (type === TransactionType.LOAN) {
+        if (type === TransactionType.LOAN || type === TransactionType.WITHDRAWAL) {
             setPaymentMethod('Potong Tagihan');
         } else {
             setPaymentMethod('Cash');
@@ -138,11 +138,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ customers, onSubmit, 
             className={inputClasses}
             required
           >
-            {type === TransactionType.LOAN ? (
+            {type === TransactionType.LOAN || type === TransactionType.WITHDRAWAL ? (
                 <>
                     <option value="Potong Tagihan">Potong Tagihan (Uang Hari Ini)</option>
-                    <option value="Ambil Kas">Ambil Kas (Uang Kemarin)</option>
-                    <option value="Transfer">Transfer</option>
+                    <option value="Ambil Kas">Ambil Kas (Uang Kemarin/Transfer)</option>
                 </>
             ) : (
                 <>
