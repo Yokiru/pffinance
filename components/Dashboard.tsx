@@ -308,7 +308,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 {/* Breakdown Section (Inside Header) */}
                 <div className="text-sm space-y-2 px-1 pb-2">
                     <div className="flex justify-between items-center border-b border-dashed border-gray-800 pb-2">
-                        <span className="text-gray-400 font-medium">Cash (Fisik)</span>
+                        <span className="text-gray-400 font-medium">Cash</span>
                         <span className="font-bold text-white text-lg">{formatCurrency(breakdowns.totalUang.cash)}</span>
                     </div>
                     <div className="flex justify-between items-center">
