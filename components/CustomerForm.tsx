@@ -35,6 +35,9 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
   const [installments, setInstallments] = useState('');
   const [disbursementMethod, setDisbursementMethod] = useState<'Potong Tagihan' | 'Ambil Kas' | 'Transfer'>('Potong Tagihan');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // State to prevent accidental submit when switching steps quickly (e.g. hitting Enter)
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const isEditMode = !!initialData;
   const locations = ['Depan', 'Belakang', 'Kiri', 'Kanan', 'Luar'];
@@ -53,7 +56,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
 
   const handleNext = () => {
     if (name && location) {
+      setIsTransitioning(true);
       setStep(2);
+      // Lock submission for 500ms to prevent "Enter" key bounce/repeat from submitting step 2 immediately
+      setTimeout(() => setIsTransitioning(false), 500);
     } else {
       const form = document.getElementById('customer-form') as HTMLFormElement;
       if (form) form.reportValidity();
@@ -66,6 +72,19 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent submission on step 1, act as Next
+    if (step === 1) {
+      handleNext();
+      return;
+    }
+
+    // Block submission if we just transitioned (prevents accidental double Enter)
+    if (isTransitioning) {
+      return;
+    }
+
     if (name && location && loanDate && loanAmount && interestRate && installments && !isSubmitting) {
       setIsSubmitting(true);
       setTimeout(() => {
@@ -333,7 +352,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
         ) : (
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isTransitioning}
             className="flex-1 bg-[#C7FF24] text-black font-bold py-3 px-4 rounded-xl hover:brightness-90 transition-all disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed flex justify-center items-center shadow-lg shadow-lime-200"
           >
             {isSubmitting ? (
