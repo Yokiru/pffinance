@@ -210,10 +210,18 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
       <div className="space-y-3">
         {filteredCustomers.length > 0 ? (
           filteredCustomers.map(customer => (
-            <button key={customer.id} onClick={() => onCustomerSelect(customer)} className="relative w-full text-left bg-card shadow-sm border border-gray-100 rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5">
+            <button 
+                key={customer.id} 
+                onClick={() => onCustomerSelect(customer)} 
+                className={`relative w-full text-left shadow-sm rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5 ${
+                    customer.status === 'lunas' 
+                    ? 'bg-blue-50/30 border-2 border-blue-600' 
+                    : 'bg-card border border-gray-100'
+                }`}
+            >
               
               {/* Status Indicators: Top Right Corner */}
-              <div className="absolute top-2 right-2 flex gap-1">
+              <div className="absolute top-2 right-2 flex gap-1 items-center">
                 {/* Green: New Loan Today (Checked via transaction OR profile date) */}
                 {customer.hasLoanedToday && (
                     <div className="w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white shadow-sm z-10" title="Peminjaman baru hari ini"></div>
@@ -225,18 +233,20 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
                 )}
               </div>
               
-              <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
-                <span className="text-xl font-bold text-gray-700">{customer.name[0]?.toUpperCase()}</span>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center border border-gray-200 flex-shrink-0 ${customer.status === 'lunas' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-700'}`}>
+                <span className="text-xl font-bold">{customer.name[0]?.toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-base text-gray-900 truncate">{customer.name}</p>
+                <p className={`font-bold text-base truncate ${customer.status === 'lunas' ? 'text-gray-600' : 'text-gray-900'}`}>{customer.name}</p>
                 <p className="text-xs font-medium text-gray-500">{customer.location}</p>
                 {customer.phone && (
                      <p className="text-xs font-medium text-gray-400">{customer.phone}</p>
                 )}
               </div>
               <div className="text-right flex flex-col items-end">
-                <p className="font-normal text-lg text-gray-900">{formatCurrency(customer.totalLoanWithInterest)}</p>
+                <p className={`font-normal text-lg ${customer.status === 'lunas' ? 'text-gray-500' : 'text-gray-900'}`}>
+                    {formatCurrency(customer.totalLoanWithInterest)}
+                </p>
                 {customer.amountPaidToday > 0 && (
                     <p className="text-xs font-bold text-green-600 mt-0.5">
                         + {formatCurrency(customer.amountPaidToday)}
