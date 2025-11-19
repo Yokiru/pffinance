@@ -137,6 +137,20 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
       }
     };
 
+    // Dynamic Font Size Logic
+    const remainingLoanStr = formatCurrency(remainingLoan);
+    const totalRepaymentsStr = formatCurrency(totalRepayments);
+
+    const getDynamicFontSize = (text: string) => {
+        const len = text.length;
+        if (len > 15) return 'text-sm'; // e.g. Rp 100.000.000
+        if (len > 12) return 'text-base'; // e.g. Rp 10.000.000
+        return 'text-xl'; // Default
+    };
+
+    const remainingLoanFontSize = getDynamicFontSize(remainingLoanStr);
+    const totalRepaymentsFontSize = getDynamicFontSize(totalRepaymentsStr);
+
     return (
         <div className="relative flex flex-col h-full text-gray-900 overflow-hidden bg-app-bg">
             {/* Simple Header */}
@@ -185,13 +199,13 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
                         {/* Remaining Loan (Prominent) */}
                         <BentoCard span="col-span-2" className="bg-[#C7FF24] border-none">
                             <p className="text-xs text-black mb-1">Sisa Tagihan</p>
-                            <p className="text-xl font-semibold text-black truncate">{formatCurrency(remainingLoan)}</p>
+                            <p className={`${remainingLoanFontSize} font-semibold text-black truncate tracking-tight`}>{remainingLoanStr}</p>
                         </BentoCard>
 
                         {/* Total Paid */}
                         <BentoCard span="col-span-2" className="bg-[#050505] border-none">
                             <p className="text-xs text-gray-400 mb-1">Total Dibayar</p>
-                            <p className="text-xl font-semibold text-white truncate">{formatCurrency(totalRepayments)}</p>
+                            <p className={`${totalRepaymentsFontSize} font-semibold text-white truncate tracking-tight`}>{totalRepaymentsStr}</p>
                         </BentoCard>
 
                         {/* Status */}
