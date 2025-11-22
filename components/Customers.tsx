@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Customer, Transaction, TransactionType } from '../types';
 import { formatCurrency } from '../utils/formatters';
@@ -25,7 +26,10 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
-  const locations = ['Semua', 'Depan', 'Belakang', 'Kiri', 'Kanan', 'Luar'];
+  const locations = useMemo(() => {
+    const uniqueLocations = new Set(customers.map(c => c.location));
+    return ['Semua', ...Array.from(uniqueLocations).sort()];
+  }, [customers]);
   
   const customersWithLoanInfo = useMemo(() => {
     const transactionsByCustomer = new Map<string, number>();
@@ -89,9 +93,17 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
     let filtered = [...customersWithLoanInfo]; // Create a mutable copy
 
     if (searchQuery) {
-      filtered = filtered.filter(customer =>
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      const searchTerms = searchQuery
+        .split(',')
+        .map(term => term.trim().toLowerCase())
+        .filter(term => term.length > 0);
+      
+      if (searchTerms.length > 0) {
+        filtered = filtered.filter(customer => {
+          const customerNameLower = customer.name.toLowerCase();
+          return searchTerms.some(term => customerNameLower.includes(term));
+        });
+      }
     }
 
     if (selectedLocation !== 'Semua') {

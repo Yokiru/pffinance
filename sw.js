@@ -1,16 +1,10 @@
-const CACHE_NAME = 'monetto-cache-v2';
+const CACHE_NAME = 'monetto-cache-v6'; // Bump version for clean update
 const urlsToCache = [
   '/',
   '/index.html',
-  '/index.tsx',
   '/manifest.json',
-  '/logo-pjfinance.png',
-  // External Assets required for offline mode
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Stack+Sans+Notch:wght@400;500;600;700&display=swap',
-  'https://esm.sh/@supabase/supabase-js@2',
-  'https://aistudiocdn.com/react-dom@^19.2.0/',
-  'https://aistudiocdn.com/react@^19.2.0/'
+  '/logo-pjfinance.png'
+  // Removed fragile external URLs and source files. They will be cached at runtime.
 ];
 
 self.addEventListener('install', (event) => {
@@ -18,7 +12,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Opened cache');
+        console.log('Opened cache for pre-caching');
         return cache.addAll(urlsToCache);
       })
   );
@@ -33,33 +27,21 @@ self.addEventListener('fetch', (event) => {
           return response;
         }
 
-        // Clone the request because it's a one-time use stream
-        const fetchRequest = event.request.clone();
-
-        return fetch(fetchRequest).then(
-          (response) => {
-            // Check if we received a valid response
-            if(!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
+        // Not in cache, fetch from network
+        return fetch(event.request).then(
+          (networkResponse) => {
+            // Check if we received a valid response to cache.
+            // This is a simplified check that allows caching of basic and CORS responses.
+            if (networkResponse && networkResponse.status === 200) {
+              const responseToCache = networkResponse.clone();
+              caches.open(CACHE_NAME)
+                .then((cache) => {
+                  cache.put(event.request, responseToCache);
+                });
             }
-
-            // Clone the response because it's a one-time use stream
-            const responseToCache = response.clone();
-
-            // Only cache requests to our own origin or specific CDNs we trust (simplified here)
-            if (event.request.url.startsWith(self.location.origin) || urlsToCache.includes(event.request.url)) {
-                caches.open(CACHE_NAME)
-                  .then((cache) => {
-                    cache.put(event.request, responseToCache);
-                  });
-            }
-
-            return response;
+            return networkResponse;
           }
-        ).catch(() => {
-            // Fallback for offline
-            // You could return a custom offline page here if index.html isn't cached
-        });
+        ); // IMPORTANT: Removed the empty .catch() block. Let errors propagate.
       })
   );
 });

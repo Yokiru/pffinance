@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Customer, Transaction, TransactionType } from '../types';
 import Numpad from './Numpad';
@@ -8,12 +9,13 @@ import Modal from './Modal';
 import CustomerForm from './CustomerForm';
 import TransactionForm from './TransactionForm';
 import SaverDetailView from './SaverDetailView';
+import DateRangePickerModal from './DateRangePickerModal';
 
 interface TransactionNumpadModalProps {
   customer: Customer;
   transactions: Transaction[];
   onClose: () => void;
-  onSubmit: (transaction: Omit<Transaction, 'id' | 'date'>) => void;
+  onSubmit: (transaction: Omit<Transaction, 'id'>) => void;
   onUpdateCustomer: (customer: Customer) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transactionId: string) => void;
@@ -30,6 +32,10 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
     const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Transfer' | 'Potong Tagihan' | 'Ambil Kas'>('Cash');
     const [isDetailViewOpen, setIsDetailViewOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+    // New state for transaction date
+    const [transactionDate, setTransactionDate] = useState(new Date());
+    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
     // State for transaction edit/delete modals
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -144,6 +150,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                 type: mode === 'repayment' ? TransactionType.REPAYMENT : mode === 'savings' ? TransactionType.SAVINGS : TransactionType.WITHDRAWAL,
                 description: mode === 'repayment' ? `Pembayaran untuk ${customer.name}` : mode === 'savings' ? `Simpanan untuk ${customer.name}` : `Penarikan oleh ${customer.name}`,
                 paymentMethod: paymentMethod,
+                date: transactionDate.toISOString(),
             });
         }
     };
@@ -227,6 +234,23 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
         });
     };
 
+    const formatDateForButton = (date: Date) => {
+        const today = new Date();
+        const yesterday = new Date();
+        yesterday.setDate(today.getDate() - 1);
+
+        if (date.toDateString() === today.toDateString()) {
+            return "Hari Ini";
+        }
+        if (date.toDateString() === yesterday.toDateString()) {
+            return "Kemarin";
+        }
+        return date.toLocaleDateString('id-ID', {
+            day: 'numeric',
+            month: 'long',
+        });
+    };
+
     const withdrawalExceedsBalance = mode === 'withdrawal' && numericAmount > totalSavings;
     const isConfirmDisabled = numericAmount === 0 || withdrawalExceedsBalance;
 
@@ -238,9 +262,9 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                         {/* Numpad View */}
                         <div className="w-full h-full flex-shrink-0 flex flex-col bg-app-bg">
                             {/* Header / "Send to" Section */}
-                            <div className="pt-2 px-6 pb-2">
-                                <div className="flex items-center justify-between mb-2">
-                                    <button 
+                            <div className="pt-4 px-6 pb-2">
+                                <div className="flex items-center justify-between mb-4">
+                                     <button 
                                         onClick={handleClose} 
                                         className="w-10 h-10 flex items-center justify-center bg-card border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
                                         aria-label="Kembali"
@@ -249,6 +273,17 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                                         </svg>
                                     </button>
+
+                                    <button 
+                                        onClick={() => setIsDatePickerOpen(true)}
+                                        className="bg-card border border-gray-200 rounded-full px-4 py-2 text-sm text-gray-700 font-medium flex items-center gap-2 hover:bg-gray-50 transition-colors shadow-sm active:scale-95">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span>{formatDateForButton(transactionDate)}</span>
+                                    </button>
+
+                                    <div className="w-10 h-10"></div>
                                 </div>
                                 
                                 <div className="bg-card rounded-2xl p-4 shadow-sm flex items-center justify-between">
@@ -275,7 +310,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                             </div>
 
                             {/* Amount Section */}
-                            <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-4">
+                            <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-8">
                                 {withdrawalExceedsBalance && <p className="text-red-500 text-xs text-center mb-2 font-bold bg-red-50 px-3 py-1 rounded-full">Saldo tidak cukup</p>}
                                 <div className="flex items-center justify-center">
                                     <span className={`${amountFontSizeClass} font-bold text-gray-900 tracking-tight leading-none`}>
@@ -360,7 +395,27 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                 </div>
             </div>
 
-            {/* Modals (Edit Customer, Delete Confirm, etc.) remain unchanged */}
+            {/* Date Picker Modal */}
+            <DateRangePickerModal
+                isOpen={isDatePickerOpen}
+                onClose={() => setIsDatePickerOpen(false)}
+                currentRange={{ start: transactionDate, end: transactionDate }}
+                onApply={(range) => {
+                    const selectedDate = new Date(range.start);
+                    const today = new Date();
+                    
+                    if (selectedDate.toDateString() === today.toDateString()) {
+                        setTransactionDate(new Date()); // Resets to current time
+                    } else {
+                        selectedDate.setHours(9, 0, 0, 0); // Set to 9 AM for past dates
+                        setTransactionDate(selectedDate);
+                    }
+                }}
+                selectionMode="single"
+                title="Pilih Tanggal Transaksi"
+            />
+
+            {/* Other Modals */}
             <Modal 
                 isOpen={isEditModalOpen} 
                 onClose={() => setIsEditModalOpen(false)} 

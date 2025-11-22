@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { Customer, Transaction, TransactionType } from '../types';
 import { DateRange } from '../App';
@@ -101,12 +100,11 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
                 }
             } 
             else if (t.type === TransactionType.WITHDRAWAL) {
-                 // Logic: If 'Cash', it comes from the daily bag (Potong Tagihan equivalent). 
-                 // If 'Transfer', it comes from bank/reserve (Ambil Kas equivalent).
-                 if (t.paymentMethod === 'Cash') {
+                 // Corrected Logic: Withdrawals use 'Potong Tagihan' for daily cash and 'Ambil Kas' for reserve.
+                 if (t.paymentMethod === 'Potong Tagihan') {
                     dailySavingsFlow.outCash += t.amount;
                     outflowBreakdown.withdrawals.potongTagihan += t.amount;
-                } else {
+                } else { // This handles 'Ambil Kas'
                     dailySavingsFlow.outTransfer += t.amount;
                     outflowBreakdown.withdrawals.ambilKas += t.amount;
                 }
@@ -124,7 +122,7 @@ const Dashboard: React.FC<DashboardProps> = ({ customers, dailyTransactions, cus
         // --- CALCULATIONS ---
 
         // Total Uang Calculation (The big number at the top)
-        // Formula: (Repayments Cash + Savings In Cash) - (Loans Potong Tagihan + Withdrawals Cash)
+        // Formula: (Repayments Cash + Savings In Cash) - (Loans Potong Tagihan + Withdrawals Potong Tagihan)
         const totalUangCash = 
             (dailyRepaymentsBreakdown.cash + dailySavingsFlow.inCash) - 
             (outflowBreakdown.loans.potongTagihan + outflowBreakdown.withdrawals.potongTagihan);

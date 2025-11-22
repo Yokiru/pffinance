@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Customer, Transaction, TransactionType } from './types';
 import Dashboard from './components/Dashboard';
@@ -103,8 +104,15 @@ const App: React.FC = () => {
   };
 
   const loadFromLocal = <T,>(key: string): T | null => {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
+    try {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.error(`Error parsing JSON from localStorage key "${key}":`, error);
+      // If parsing fails, remove the corrupted data to prevent future errors
+      localStorage.removeItem(key);
+      return null;
+    }
   };
 
   const addToSyncQueue = (item: SyncQueueItem) => {
@@ -444,11 +452,10 @@ const App: React.FC = () => {
     }
   };
   
-  const handleCreateTransactionFromNumpad = async (transactionData: Omit<Transaction, 'id' | 'date'>) => {
+  const handleCreateTransactionFromNumpad = async (transactionData: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = {
       ...transactionData,
       id: `TRX-${new Date().getTime()}`,
-      date: new Date().toISOString(),
     };
     
     // Optimistic Update

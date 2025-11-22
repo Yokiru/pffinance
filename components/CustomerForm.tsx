@@ -40,7 +40,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   const isEditMode = !!initialData;
-  const locations = ['Depan', 'Belakang', 'Kiri', 'Kanan', 'Luar'];
   
   useEffect(() => {
     if (initialData) {
@@ -154,18 +153,15 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ onSubmit, onCancel, initial
             </div>
             <div>
               <label htmlFor="location" className="block text-sm font-medium text-gray-700">Lokasi</label>
-              <select
+              <input
+                type="text"
                 id="location"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 className={inputClasses}
                 required
-              >
-                <option value="" disabled>Pilih lokasi</option>
-                {locations.map(loc => (
-                  <option key={loc} value={loc}>{loc}</option>
-                ))}
-              </select>
+                placeholder="e.g., Depan, Belakang, Luar"
+              />
             </div>
           </div>
         )}

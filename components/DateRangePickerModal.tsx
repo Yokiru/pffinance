@@ -9,9 +9,19 @@ interface DateRangePickerModalProps {
   currentRange: DateRange;
   onApply: (range: DateRange) => void;
   onManageHolidays?: () => void;
+  selectionMode?: 'range' | 'single';
+  title?: string;
 }
 
-const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onClose, currentRange, onApply, onManageHolidays }) => {
+const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  currentRange, 
+  onApply, 
+  onManageHolidays,
+  selectionMode = 'range',
+  title = "Pilih Rentang Tanggal"
+}) => {
   const [viewDate, setViewDate] = useState(currentRange.end);
   const [selectedStart, setSelectedStart] = useState<Date | null>(currentRange.start);
   const [selectedEnd, setSelectedEnd] = useState<Date | null>(currentRange.end);
@@ -26,6 +36,12 @@ const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onC
   }, [isOpen, currentRange]);
 
   const handleDayClick = (day: Date) => {
+    if (selectionMode === 'single') {
+      onApply({ start: day, end: day });
+      onClose();
+      return;
+    }
+
     if (!selectedStart || (selectedStart && selectedEnd)) {
       setSelectedStart(day);
       setSelectedEnd(null);
@@ -76,25 +92,35 @@ const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onC
 
   const renderDay = (day: Date, isCurrentMonth: boolean) => {
     const dateString = day.toDateString();
-    const isStartDate = selectedStart?.toDateString() === dateString;
-    const isEndDate = selectedEnd?.toDateString() === dateString;
-    const isInRange = selectedStart && (selectedEnd || hoverDate) && day > selectedStart && day < (selectedEnd || hoverDate!);
-    const isHovered = hoverDate?.toDateString() === dateString;
-
+    
     let classes = 'w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-150';
     if (!isCurrentMonth) {
       classes += ' text-gray-300';
     } else {
       classes += ' text-gray-900 cursor-pointer';
 
-      if (isStartDate || isEndDate) {
-        classes += ' bg-black text-white font-bold';
-      } else if (isInRange) {
-        classes += ' bg-gray-200';
-      } else if (isHovered && selectedStart && !selectedEnd) {
-         classes += ' bg-gray-200';
+      if (selectionMode === 'single') {
+        const isSelected = selectedStart?.toDateString() === dateString;
+        if (isSelected) {
+            classes += ' bg-black text-white font-bold';
+        } else {
+            classes += ' hover:bg-gray-100';
+        }
       } else {
-         classes += ' hover:bg-gray-100';
+        const isStartDate = selectedStart?.toDateString() === dateString;
+        const isEndDate = selectedEnd?.toDateString() === dateString;
+        const isInRange = selectedStart && (selectedEnd || hoverDate) && day > selectedStart && day < (selectedEnd || hoverDate!);
+        const isHovered = hoverDate?.toDateString() === dateString;
+
+        if (isStartDate || isEndDate) {
+          classes += ' bg-black text-white font-bold';
+        } else if (isInRange) {
+          classes += ' bg-gray-200';
+        } else if (isHovered && selectedStart && !selectedEnd) {
+           classes += ' bg-gray-200';
+        } else {
+           classes += ' hover:bg-gray-100';
+        }
       }
     }
 
@@ -117,7 +143,7 @@ const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onC
     <Modal 
         isOpen={isOpen} 
         onClose={onClose} 
-        title="Pilih Rentang Tanggal"
+        title={title}
         headerAction={onManageHolidays ? (
             <button 
                 onClick={onManageHolidays}
@@ -146,14 +172,16 @@ const DateRangePickerModal: React.FC<DateRangePickerModalProps> = ({ isOpen, onC
         <div className="grid grid-cols-7 gap-y-1">
           {calendarGrid.map((day, index) => renderDay(day, index >= leadingDays.length && index < leadingDays.length + days.length))}
         </div>
-        <div className="flex gap-3 pt-6 mt-2 border-t border-gray-100">
-            <button onClick={onClose} className="flex-1 bg-gray-100 text-gray-700 font-bold py-2 px-4 rounded-xl hover:bg-gray-200 transition-all">
-                Batal
-            </button>
-            <button onClick={handleApply} disabled={!selectedStart} className="flex-1 bg-black text-white font-bold py-2 px-4 rounded-xl hover:bg-gray-800 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed">
-                Terapkan
-            </button>
-        </div>
+        {selectionMode === 'range' && (
+          <div className="flex gap-3 pt-6 mt-2 border-t border-gray-100">
+              <button onClick={onClose} className="flex-1 bg-gray-100 text-gray-700 font-bold py-2 px-4 rounded-xl hover:bg-gray-200 transition-all">
+                  Batal
+              </button>
+              <button onClick={handleApply} disabled={!selectedStart} className="flex-1 bg-black text-white font-bold py-2 px-4 rounded-xl hover:bg-gray-800 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed">
+                  Terapkan
+              </button>
+          </div>
+        )}
       </div>
     </Modal>
   );
