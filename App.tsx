@@ -409,6 +409,16 @@ const App: React.FC = () => {
         });
     }
   };
+
+  const handleArchiveToggle = (customerId: string) => {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        // If archived, set back to 'aktif'. Otherwise, archive it.
+        const newStatus = customer.status === 'arsip' ? 'aktif' : 'arsip';
+        const updatedCustomer: Customer = { ...customer, status: newStatus };
+        updateCustomer(updatedCustomer);
+      }
+  };
   
   const recalculateCustomerStatus = async (customerId: string, allTransactions: Transaction[]) => {
       const customer = customers.find(c => c.id === customerId);
@@ -623,6 +633,7 @@ const App: React.FC = () => {
             onDeleteTransaction={deleteTransaction}
             onDeleteCustomer={deleteCustomer}
             onWithdrawClick={handleWithdrawClick}
+            onArchiveToggle={handleArchiveToggle}
             mode={transactionMode}
             customHolidays={customHolidays}
         />

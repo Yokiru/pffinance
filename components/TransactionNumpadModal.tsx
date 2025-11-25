@@ -21,11 +21,12 @@ interface TransactionNumpadModalProps {
   onDeleteTransaction: (transactionId: string) => void;
   onDeleteCustomer: (customerId: string) => void;
   onWithdrawClick: (customer: Customer) => void;
+  onArchiveToggle: (customerId: string) => void;
   mode: 'repayment' | 'savings' | 'withdrawal';
   customHolidays: string[];
 }
 
-const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ customer, transactions, onClose, onSubmit, onUpdateCustomer, onUpdateTransaction, onDeleteTransaction, onDeleteCustomer, onWithdrawClick, mode, customHolidays }) => {
+const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ customer, transactions, onClose, onSubmit, onUpdateCustomer, onUpdateTransaction, onDeleteTransaction, onDeleteCustomer, onWithdrawClick, onArchiveToggle, mode, customHolidays }) => {
     const [amount, setAmount] = useState('0');
     const [isClosing, setIsClosing] = useState(false);
     const [isVisible, setIsVisible] = useState(false);
@@ -44,6 +45,9 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
     
     // State for customer delete
     const [isDeleteCustomerConfirmOpen, setIsDeleteCustomerConfirmOpen] = useState(false);
+
+    // State for archive confirmation modal
+    const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
     
     // Initialize payment method based on mode
     useEffect(() => {
@@ -194,6 +198,15 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
             onUpdateTransaction({ ...updatedData, id: selectedTransaction.id });
             setIsEditTransactionModalOpen(false);
             setSelectedTransaction(null);
+        }
+    };
+
+    const handleConfirmArchive = () => {
+        onArchiveToggle(customer.id);
+        setIsArchiveConfirmOpen(false);
+        // If we archive/unarchive, go back to the numpad view
+        if (customer.status !== 'arsip') {
+            setIsDetailViewOpen(false);
         }
     };
 
@@ -377,6 +390,7 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                                     onEditClick={() => setIsEditModalOpen(true)}
                                     onEditTransactionClick={handleEditTransactionClick}
                                     onDeleteTransactionClick={handleDeleteTransactionClick}
+                                    onArchiveToggle={() => setIsArchiveConfirmOpen(true)}
                                     customHolidays={customHolidays}
                                 />
                             ) : (
@@ -478,6 +492,31 @@ const TransactionNumpadModal: React.FC<TransactionNumpadModalProps> = ({ custome
                     </div>
                 </Modal>
             )}
+
+             {/* Archive/Unarchive Confirmation Modal */}
+            <Modal isOpen={isArchiveConfirmOpen} onClose={() => setIsArchiveConfirmOpen(false)} contentClassName="p-0">
+                <div className="p-6 text-center">
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">{customer.status === 'arsip' ? 'Aktifkan Kembali Nasabah?' : 'Arsipkan Nasabah?'}</h3>
+                    <p className="text-gray-500 text-sm mb-4">
+                        Anda yakin ingin {customer.status === 'arsip' ? 'mengaktifkan kembali' : 'mengarsipkan'} <span className="font-bold text-gray-900">{customer.name}</span>?
+                        <br/>
+                        <span className="text-xs text-gray-500 mt-1 block">
+                            {customer.status === 'arsip' ? 'Nasabah akan muncul kembali di daftar aktif.' : 'Nasabah akan disembunyikan dari daftar utama.'}
+                        </span>
+                    </p>
+                </div>
+                <div className="flex border-t border-gray-100">
+                    <button onClick={() => setIsArchiveConfirmOpen(false)} className="flex-1 p-3 text-gray-500 hover:bg-gray-50 transition-colors rounded-bl-3xl">Batal</button>
+                    <button 
+                        onClick={handleConfirmArchive} 
+                        className={`flex-1 p-3 font-bold hover:bg-gray-50 transition-colors border-l border-gray-100 rounded-br-3xl ${
+                            customer.status === 'arsip' ? 'text-green-600' : 'text-red-500'
+                        }`}
+                    >
+                        {customer.status === 'arsip' ? 'Ya, Aktifkan' : 'Ya, Arsipkan'}
+                    </button>
+                </div>
+            </Modal>
         </>
     );
 };

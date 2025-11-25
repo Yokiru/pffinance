@@ -15,7 +15,7 @@ export interface Customer {
   loanAmount: number;
   interestRate: number;
   installments: number;
-  status: 'aktif' | 'lunas';
+  status: 'aktif' | 'lunas' | 'arsip';
   role: 'borrower' | 'saver'; // Added role to distinguish types
 }
 

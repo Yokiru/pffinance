@@ -21,7 +21,7 @@ const sortOptions = [
 
 const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustomerSelect }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState('Semua');
+  const [activeFilter, setActiveFilter] = useState('Semua'); // Combines location and archive status
   const [sortOption, setSortOption] = useState('name-asc');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
@@ -71,14 +71,16 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
       const totalLoanWithInterest = customer.loanAmount * (1 + customer.interestRate / 100);
       const remainingLoan = totalLoanWithInterest - totalRepayments;
 
-      const isPaidOff = remainingLoan <= 0;
+      // Don't override 'arsip' status
+      const isPaidOff = remainingLoan <= 0 && customer.status !== 'arsip';
+      const currentStatus = customer.status === 'arsip' ? 'arsip' : (isPaidOff ? 'lunas' : 'aktif');
 
       // Check if they have a LOAN transaction today OR if their profile loanDate is today (for new customers)
       const hasLoanedToday = loanedTodayIds.has(customer.id) || customer.loanDate === todayStr;
 
       return {
         ...customer,
-        status: (isPaidOff ? 'lunas' : 'aktif') as Customer['status'],
+        status: currentStatus as Customer['status'],
         remainingLoan: Math.max(0, remainingLoan),
         totalLoanWithInterest,
         hasPaidToday: paidTodayIds.has(customer.id),
@@ -92,6 +94,21 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
   const filteredCustomers = useMemo(() => {
     let filtered = [...customersWithLoanInfo]; // Create a mutable copy
 
+    // 1. Filter by Archive Status OR Location
+    if (activeFilter === 'Arsip') {
+        filtered = filtered.filter(c => c.status === 'arsip');
+    } else {
+        // Show only non-archived customers
+        filtered = filtered.filter(c => c.status !== 'arsip');
+        // Then filter by location if not 'Semua'
+        if (activeFilter !== 'Semua') {
+            filtered = filtered.filter(customer =>
+                customer.location.toLowerCase() === activeFilter.toLowerCase()
+            );
+        }
+    }
+
+    // 2. Filter by Search Query
     if (searchQuery) {
       const searchTerms = searchQuery
         .split(',')
@@ -105,14 +122,8 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
         });
       }
     }
-
-    if (selectedLocation !== 'Semua') {
-      filtered = filtered.filter(customer =>
-        customer.location.toLowerCase() === selectedLocation.toLowerCase()
-      );
-    }
     
-    // Sorting logic
+    // 3. Sorting logic
     filtered.sort((a, b) => {
         switch (sortOption) {
             case 'name-asc':
@@ -133,7 +144,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
     });
 
     return filtered;
-  }, [customersWithLoanInfo, searchQuery, selectedLocation, sortOption]);
+  }, [customersWithLoanInfo, searchQuery, activeFilter, sortOption]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -201,21 +212,36 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
             )}
           </div>
         </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
-          {locations.map(location => (
-            <button
-              key={location}
-              onClick={() => setSelectedLocation(location)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 border flex-shrink-0 ${
-                selectedLocation === location
-                  ? 'bg-[#C7FF24] text-black border-transparent shadow-md'
-                  : 'bg-card border-gray-100 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {location}
-            </button>
-          ))}
+        
+        {/* Combined Location and Archive Filters */}
+        <div>
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
+              {locations.map(location => (
+                <button
+                  key={location}
+                  onClick={() => setActiveFilter(location)}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 border flex-shrink-0 ${
+                    activeFilter === location
+                      ? 'bg-[#C7FF24] text-black border-transparent shadow-md'
+                      : 'bg-card border-gray-100 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {location}
+                </button>
+              ))}
+              {/* Archive button at the end */}
+               <button
+                  key="arsip"
+                  onClick={() => setActiveFilter('Arsip')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 border flex-shrink-0 ml-auto ${
+                    activeFilter === 'Arsip'
+                      ? 'bg-blue-600 text-white border-transparent shadow-md'
+                      : 'bg-card border-gray-100 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  Arsip
+                </button>
+            </div>
         </div>
       </div>
 
@@ -228,24 +254,32 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
                 className={`relative w-full text-left shadow-sm rounded-2xl p-3 flex items-center gap-3 transition-all hover:shadow-md hover:-translate-y-0.5 ${
                     customer.status === 'lunas' 
                     ? 'bg-blue-50/30 border-2 border-blue-600' 
+                    : customer.status === 'arsip'
+                    ? 'bg-gray-100 border border-gray-200 opacity-60'
                     : 'bg-card border border-gray-100'
                 }`}
             >
               
-              {/* Status Indicators: Top Right Corner */}
-              <div className="absolute top-2 right-2 flex gap-1 items-center">
-                {/* Green: New Loan Today (Checked via transaction OR profile date) */}
-                {customer.hasLoanedToday && (
-                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white shadow-sm z-10" title="Peminjaman baru hari ini"></div>
-                )}
-                
-                {/* Yellow: Active but Has Not Paid Today AND Not a new loan today */}
-                {customer.status === 'aktif' && !customer.hasPaidToday && !customer.hasLoanedToday && (
-                    <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full ring-2 ring-white shadow-sm z-10" title="Belum bayar hari ini"></div>
-                )}
-              </div>
+              {/* Status Indicators: Top Right Corner (Hide for Archived) */}
+              {customer.status !== 'arsip' && (
+                <div className="absolute top-2 right-2 flex gap-1 items-center">
+                  {/* Green: New Loan Today (Checked via transaction OR profile date) */}
+                  {customer.hasLoanedToday && (
+                      <div className="w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white shadow-sm z-10" title="Peminjaman baru hari ini"></div>
+                  )}
+                  
+                  {/* Yellow: Active but Has Not Paid Today AND Not a new loan today */}
+                  {customer.status === 'aktif' && !customer.hasPaidToday && !customer.hasLoanedToday && (
+                      <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full ring-2 ring-white shadow-sm z-10" title="Belum bayar hari ini"></div>
+                  )}
+                </div>
+              )}
               
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center border border-gray-200 flex-shrink-0 ${customer.status === 'lunas' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-700'}`}>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center border border-gray-200 flex-shrink-0 ${
+                  customer.status === 'lunas' ? 'bg-blue-100 text-blue-600' 
+                  : customer.status === 'arsip' ? 'bg-gray-200 text-gray-400'
+                  : 'bg-gray-100 text-gray-700'}`
+                }>
                 <span className="text-xl font-bold">{customer.name[0]?.toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0">
@@ -256,10 +290,10 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
                 )}
               </div>
               <div className="text-right flex flex-col items-end">
-                <p className={`font-normal text-lg ${customer.status === 'lunas' ? 'text-gray-500' : 'text-gray-900'}`}>
+                <p className={`font-normal text-lg ${customer.status === 'lunas' || customer.status === 'arsip' ? 'text-gray-500' : 'text-gray-900'}`}>
                     {formatCurrency(customer.totalLoanWithInterest)}
                 </p>
-                {customer.amountPaidToday > 0 && (
+                {customer.amountPaidToday > 0 && customer.status !== 'arsip' && (
                     <p className="text-xs font-bold text-green-600 mt-0.5">
                         + {formatCurrency(customer.amountPaidToday)}
                     </p>
@@ -269,7 +303,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, transactions, onCustom
           ))
         ) : (
           <div className="bg-card shadow-sm border border-gray-100 rounded-2xl p-6 text-center text-gray-400">
-            <p>{searchQuery || selectedLocation !== 'Semua' ? 'Nasabah tidak ditemukan.' : 'Belum ada nasabah terdaftar.'}</p>
+            <p>{searchQuery || activeFilter !== 'Semua' ? 'Nasabah tidak ditemukan.' : 'Belum ada nasabah terdaftar.'}</p>
           </div>
         )}
       </div>
