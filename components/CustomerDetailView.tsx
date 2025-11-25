@@ -159,7 +159,7 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
     return (
         <div className="relative flex flex-col h-full text-gray-900 overflow-hidden bg-app-bg">
             {/* Improved Header with Back Button */}
-            <header className="bg-app-bg/80 backdrop-blur-md p-4 flex items-center z-10 sticky top-0">
+            <header className="bg-app-bg/80 backdrop-blur-md p-4 flex items-center justify-between z-10 sticky top-0">
                 <button
                     onClick={onClose}
                     className="w-10 h-10 flex items-center justify-center bg-card border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
@@ -169,7 +169,8 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, trans
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                     </svg>
                 </button>
-                <h2 className="text-lg font-bold text-center flex-1 -ml-10">Detail Nasabah</h2>
+                <h2 className="text-lg font-bold text-center">Detail Nasabah</h2>
+                <div className="w-10 h-10"></div>
             </header>
 
             <main className="flex-1 overflow-y-auto no-scrollbar z-10 pb-24">
