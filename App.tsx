@@ -178,8 +178,24 @@ const App: React.FC = () => {
         const { data: customersDB, error: cError } = await supabase.from('customers').select('*');
         if (cError) throw cError;
 
-        const { data: transactionsDB, error: tError } = await supabase.from('transactions').select('*');
+        const { data: transactionsDB, error: tError } = await supabase
+            .from('transactions')
+            .select('*')
+            .order('date', { ascending: false }); // Order by newest first
         if (tError) throw tError;
+
+        // --- RLS FALLBACK PROTECTION ---
+        // If server returns empty list [] (likely due to RLS enabled and no policy), 
+        // but we have local data, DO NOT overwrite local data with empty list.
+        // Instead, throw error to trigger the catch block which loads local data.
+        const localCustomersRaw = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+        const hasLocalCustomers = localCustomersRaw && JSON.parse(localCustomersRaw).length > 0;
+
+        if ((!customersDB || customersDB.length === 0) && hasLocalCustomers) {
+            console.warn("⚠️ Data server kosong tapi data lokal ada. Kemungkinan RLS aktif blocking read. Menggunakan data lokal.");
+            throw new Error("RLS_BLOCKING_SUSPECTED");
+        }
+        // -------------------------------
 
         // Apply local queue changes to the DB data BEFORE mapping to App state
         // This ensures pending offline changes are visible immediately
