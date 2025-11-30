@@ -101,7 +101,11 @@ const App: React.FC = () => {
   // --- DATA PERSISTENCE & LOADING ---
 
   const saveToLocal = (key: string, data: any) => {
-    localStorage.setItem(key, JSON.stringify(data));
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (error) {
+      console.error(`Error saving to localStorage key "${key}":`, error);
+    }
   };
 
   const loadFromLocal = <T,>(key: string): T | null => {
@@ -122,8 +126,10 @@ const App: React.FC = () => {
       ...item,
       queueId: `Q-${Date.now()}-${Math.random()}`
     };
-    queue.push(newItem);
-    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, queue);
+    // Avoid duplicates for the same record and action
+    const filteredQueue = queue.filter(q => !(q.id === newItem.id && q.action === newItem.action));
+    filteredQueue.push(newItem);
+    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, filteredQueue);
     console.log('Item added to sync queue:', newItem);
   };
 
@@ -134,6 +140,7 @@ const App: React.FC = () => {
 
     if (navigator.onLine) {
       try {
+        console.log("Online: Fetching latest data from Supabase...");
         const { data: customersData, error: cError } = await supabase.from('customers').select('*');
         if (cError) throw cError;
 
@@ -150,6 +157,7 @@ const App: React.FC = () => {
           setTransactions(mappedTransactions);
           saveToLocal(STORAGE_KEYS.TRANSACTIONS, mappedTransactions);
         }
+         console.log("Successfully fetched and updated local data.");
       } catch (error) {
          console.error("Failed to fetch data from Supabase, loading from local storage.", error);
          loadDataFromLocal();
@@ -183,7 +191,7 @@ const App: React.FC = () => {
       try {
         if (item.table === 'customers') {
           if (item.action === 'INSERT') {
-            const { error: err } = await supabase.from('customers').insert([item.payload]);
+            const { error: err } = await supabase.from('customers').upsert([item.payload]);
             error = err;
           } else if (item.action === 'UPDATE') {
             const { error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id);
@@ -194,7 +202,7 @@ const App: React.FC = () => {
           }
         } else if (item.table === 'transactions') {
            if (item.action === 'INSERT') {
-            const { error: err } = await supabase.from('transactions').insert([item.payload]);
+            const { error: err } = await supabase.from('transactions').upsert([item.payload]);
             error = err;
           } else if (item.action === 'UPDATE') {
             const { error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id);
@@ -219,9 +227,9 @@ const App: React.FC = () => {
     if (successfullySyncedQueueIds.size > 0) {
         const remainingQueue = queue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
         saveToLocal(STORAGE_KEYS.SYNC_QUEUE, remainingQueue);
-        console.log(`${successfullySyncedQueueIds.size} items synced. Refreshing data...`);
-        // Refresh data to ensure consistency
-        await fetchData();
+        console.log(`${successfullySyncedQueueIds.size} items synced. Local state is source of truth.`);
+        // IMPORTANT: DO NOT re-fetch data here. It wipes out other optimistic updates.
+        // The local state is the source of truth.
     } else {
       console.log("Sync failed for all items in this run. They will be retried later.");
     }
@@ -246,25 +254,24 @@ const App: React.FC = () => {
     window.addEventListener('offline', handleOffline);
     
     // Also try to sync on load, just in case
-    setTimeout(processSyncQueue, 1000);
+    const syncInterval = setInterval(processSyncQueue, 30000); // Try to sync every 30 seconds
+    setTimeout(processSyncQueue, 1000); // And once on load
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      clearInterval(syncInterval);
     };
   }, []);
   
   useEffect(() => {
-      // Save to local immediately on change for offline resilience
       saveToLocal(STORAGE_KEYS.CUSTOMERS, customers);
   }, [customers]);
 
   useEffect(() => {
-      // Save to local immediately on change for offline resilience
       saveToLocal(STORAGE_KEYS.TRANSACTIONS, transactions);
   }, [transactions]);
 
-  // Save holidays whenever changed
   useEffect(() => {
       saveToLocal(STORAGE_KEYS.HOLIDAYS, customHolidays);
   }, [customHolidays]);
@@ -275,10 +282,8 @@ const App: React.FC = () => {
   const filteredTransactions = useMemo(() => {
     const startDate = new Date(dateRange.start);
     startDate.setHours(0, 0, 0, 0);
-
     const endDate = new Date(dateRange.end);
     endDate.setHours(23, 59, 59, 999);
-    
     return transactions.filter(t => {
       const transactionDate = new Date(t.date);
       return transactionDate >= startDate && transactionDate <= endDate;
@@ -289,11 +294,11 @@ const App: React.FC = () => {
     return new Map(customers.map(c => [c.id, c]));
   }, [customers]);
   
-  const addCustomer = async (customerData: CustomerFormData) => {
+  const addCustomer = (customerData: CustomerFormData) => {
     const { disbursementMethod, ...data } = customerData;
     const newCustomer: Customer = {
       ...data,
-      id: `CUST-${new Date().getTime()}`,
+      id: `CUST-${Date.now()}`,
       status: 'aktif',
       role: 'borrower', 
     };
@@ -302,7 +307,7 @@ const App: React.FC = () => {
         ? new Date().toISOString() 
         : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
     const newTransaction: Transaction = {
-        id: `TRX-${new Date().getTime()}`,
+        id: `TRX-${Date.now()}`,
         customerId: newCustomer.id,
         type: TransactionType.LOAN,
         amount: newCustomer.loanAmount,
@@ -316,29 +321,22 @@ const App: React.FC = () => {
     setTransactions(prev => [...prev, newTransaction]);
     setIsCustomerModalOpen(false);
 
-    const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
-    if (cError) {
-      console.error("Offline: Queuing new customer.", cError);
-      addToSyncQueue({ id: newCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newCustomer) });
-    }
-
-    const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
-    if (tError) {
-      console.error("Offline: Queuing initial loan transaction.", tError);
-      addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    }
+    addToSyncQueue({ id: newCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newCustomer) });
+    addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+    
+    processSyncQueue();
   };
 
-  const addSaver = async (data: { name: string; amount: number; date: string }) => {
+  const addSaver = (data: { name: string; amount: number; date: string }) => {
     const { name, amount, date } = data;
     const newSaverAsCustomer: Customer = {
-      id: `CUST-${new Date().getTime()}`,
+      id: `CUST-${Date.now()}`,
       name, phone: '', location: 'Luar', loanDate: date,
       loanAmount: 0, interestRate: 0, installments: 0,
       status: 'aktif', role: 'saver',
     };
     const newTransaction: Transaction = {
-      id: `TRX-${new Date().getTime()}`,
+      id: `TRX-${Date.now()}`,
       customerId: newSaverAsCustomer.id,
       type: TransactionType.SAVINGS, amount,
       date: new Date(date + 'T09:00:00').toISOString(),
@@ -348,45 +346,29 @@ const App: React.FC = () => {
     setCustomers(prev => [...prev, newSaverAsCustomer]);
     setTransactions(prev => [...prev, newTransaction]);
     setIsSaverModalOpen(false);
-
-    const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newSaverAsCustomer)]);
-    if (cError) {
-      console.error("Offline: Queuing new saver.", cError);
-      addToSyncQueue({ id: newSaverAsCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newSaverAsCustomer) });
-    }
-        
-    const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
-    if (tError) {
-      console.error("Offline: Queuing initial saving transaction.", tError);
-      addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    }
+    
+    addToSyncQueue({ id: newSaverAsCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newSaverAsCustomer) });
+    addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+    
+    processSyncQueue();
   };
 
-  const updateCustomer = async (updatedCustomer: Customer) => {
+  const updateCustomer = (updatedCustomer: Customer) => {
     setCustomers(prevCustomers => prevCustomers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
-
-    const { error } = await supabase
-      .from('customers')
-      .update(mapCustomerToDB(updatedCustomer))
-      .eq('id', updatedCustomer.id);
-    if (error) {
-      console.error("Offline: Queuing customer update.", error);
-      addToSyncQueue({ id: updatedCustomer.id, action: 'UPDATE', table: 'customers', payload: mapCustomerToDB(updatedCustomer) });
-    }
+    addToSyncQueue({ id: updatedCustomer.id, action: 'UPDATE', table: 'customers', payload: mapCustomerToDB(updatedCustomer) });
+    processSyncQueue();
   };
 
-  const deleteCustomer = async (customerId: string) => {
+  const deleteCustomer = (customerId: string) => {
     setCustomers(prev => prev.filter(c => c.id !== customerId));
     setTransactions(prev => prev.filter(t => t.customerId !== customerId));
     if (transactionTarget?.id === customerId) {
           setTransactionTarget(null);
     }
-
-    const { error } = await supabase.from('customers').delete().eq('id', customerId);
-    if (error) {
-      console.error("Offline: Queuing customer deletion.", error);
-      addToSyncQueue({ id: customerId, action: 'DELETE', table: 'customers', payload: null });
-    }
+    addToSyncQueue({ id: customerId, action: 'DELETE', table: 'customers', payload: null });
+    // Note: Server-side cascade delete should handle transactions.
+    // Locally, we've already removed them.
+    processSyncQueue();
   };
 
   const handleArchiveToggle = (customerId: string) => {
@@ -398,7 +380,7 @@ const App: React.FC = () => {
       }
   };
   
-  const recalculateCustomerStatus = async (customerId: string, allTransactions: Transaction[]) => {
+  const recalculateCustomerStatus = (customerId: string, allTransactions: Transaction[]) => {
       const customer = customers.find(c => c.id === customerId);
       if (customer && customer.loanAmount > 0 && customer.status !== 'arsip') {
         const totalRepayments = allTransactions
@@ -416,56 +398,43 @@ const App: React.FC = () => {
       }
   };
   
-  const handleCreateTransactionFromNumpad = async (transactionData: Omit<Transaction, 'id'>) => {
+  const handleCreateTransactionFromNumpad = (transactionData: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = {
       ...transactionData,
-      id: `TRX-${new Date().getTime()}`,
+      id: `TRX-${Date.now()}`,
     };
     
     const updatedTransactions = [...transactions, newTransaction];
     setTransactions(updatedTransactions);
     setTransactionTarget(null);
     
-    const { error } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
-    if (error) {
-      console.error("Offline: Queuing numpad transaction.", error);
-      addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    }
+    addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+    processSyncQueue();
 
     if (transactionData.type === TransactionType.REPAYMENT) {
         recalculateCustomerStatus(transactionData.customerId, updatedTransactions);
     }
   };
 
-  const updateTransaction = async (updatedTransaction: Transaction) => {
+  const updateTransaction = (updatedTransaction: Transaction) => {
     const transactionToSave = { ...updatedTransaction, isEdited: true };
-    
     const updatedTransactions = transactions.map(t => t.id === updatedTransaction.id ? transactionToSave : t);
     setTransactions(updatedTransactions);
 
-    const { error } = await supabase
-      .from('transactions')
-      .update(mapTransactionToDB(transactionToSave))
-      .eq('id', transactionToSave.id);
-    if (error) {
-      console.error("Offline: Queuing transaction update.", error);
-      addToSyncQueue({ id: transactionToSave.id, action: 'UPDATE', table: 'transactions', payload: mapTransactionToDB(transactionToSave) });
-    }
+    addToSyncQueue({ id: transactionToSave.id, action: 'UPDATE', table: 'transactions', payload: mapTransactionToDB(transactionToSave) });
+    processSyncQueue();
 
     recalculateCustomerStatus(updatedTransaction.customerId, updatedTransactions);
   };
 
-  const deleteTransaction = async (transactionId: string) => {
+  const deleteTransaction = (transactionId: string) => {
     const transactionToDelete = transactions.find(t => t.id === transactionId);
     if (transactionToDelete) {
       const updatedTransactions = transactions.filter(t => t.id !== transactionId);
       setTransactions(updatedTransactions);
       
-      const { error } = await supabase.from('transactions').delete().eq('id', transactionId);
-      if (error) {
-        console.error("Offline: Queuing transaction deletion.", error);
-        addToSyncQueue({ id: transactionId, action: 'DELETE', table: 'transactions', payload: null });
-      }
+      addToSyncQueue({ id: transactionId, action: 'DELETE', table: 'transactions', payload: null });
+      processSyncQueue();
 
       recalculateCustomerStatus(transactionToDelete.customerId, updatedTransactions);
     }
