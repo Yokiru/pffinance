@@ -133,31 +133,71 @@ const App: React.FC = () => {
     console.log('Item added to sync queue:', newItem);
   };
 
+  // Helper to merge server data with local offline queue
+  const applySyncQueueToData = (serverData: any[], queue: SyncQueueItem[], table: 'customers' | 'transactions') => {
+    let merged = [...serverData];
+    const tableQueue = queue.filter(q => q.table === table);
+
+    // Sort queue by queueId or implicitly by order to replay actions correctly
+    // Assuming the queue is append-only, the order is already correct.
+
+    tableQueue.forEach(item => {
+      if (item.action === 'INSERT') {
+         // Deduplicate: if ID already exists, remove it first (shouldn't happen on insert but good for safety)
+         merged = merged.filter(d => d.id !== item.payload.id);
+         merged.push(item.payload);
+      } else if (item.action === 'UPDATE') {
+         const index = merged.findIndex(d => d.id === item.payload.id);
+         if (index >= 0) {
+            merged[index] = { ...merged[index], ...item.payload };
+         } else {
+            // If updating an item that isn't in server data (e.g. created offline), append it
+            merged.push(item.payload);
+         }
+      } else if (item.action === 'DELETE') {
+         merged = merged.filter(d => d.id !== item.id);
+      }
+    });
+
+    return merged;
+  };
+
   const fetchData = async () => {
     // Load Holidays from Local (No Supabase table for holidays yet in this version)
     const localHolidays = loadFromLocal<string[]>(STORAGE_KEYS.HOLIDAYS);
     if (localHolidays) setCustomHolidays(localHolidays);
 
+    // Always load the queue first to apply optimistic updates
+    const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+
     if (navigator.onLine) {
       try {
         console.log("Online: Fetching latest data from Supabase...");
-        const { data: customersData, error: cError } = await supabase.from('customers').select('*');
+        
+        // Fetch raw DB data (snake_case)
+        const { data: customersDB, error: cError } = await supabase.from('customers').select('*');
         if (cError) throw cError;
 
-        const { data: transactionsData, error: tError } = await supabase.from('transactions').select('*');
+        const { data: transactionsDB, error: tError } = await supabase.from('transactions').select('*');
         if (tError) throw tError;
 
-        if (customersData) {
-          const mappedCustomers = customersData.map(mapCustomerFromDB);
-          setCustomers(mappedCustomers);
-          saveToLocal(STORAGE_KEYS.CUSTOMERS, mappedCustomers);
-        }
-        if (transactionsData) {
-          const mappedTransactions = transactionsData.map(mapTransactionFromDB);
-          setTransactions(mappedTransactions);
-          saveToLocal(STORAGE_KEYS.TRANSACTIONS, mappedTransactions);
-        }
-         console.log("Successfully fetched and updated local data.");
+        // Apply local queue changes to the DB data BEFORE mapping to App state
+        // This ensures pending offline changes are visible immediately
+        const mergedCustomersDB = applySyncQueueToData(customersDB || [], syncQueue, 'customers');
+        const mergedTransactionsDB = applySyncQueueToData(transactionsDB || [], syncQueue, 'transactions');
+
+        // Map to App format
+        const mappedCustomers = mergedCustomersDB.map(mapCustomerFromDB);
+        const mappedTransactions = mergedTransactionsDB.map(mapTransactionFromDB);
+
+        setCustomers(mappedCustomers);
+        setTransactions(mappedTransactions);
+        
+        // Save the merged "Source of Truth" to local storage
+        saveToLocal(STORAGE_KEYS.CUSTOMERS, mappedCustomers);
+        saveToLocal(STORAGE_KEYS.TRANSACTIONS, mappedTransactions);
+        
+        console.log("Successfully fetched, merged, and updated local data.");
       } catch (error) {
          console.error("Failed to fetch data from Supabase, loading from local storage.", error);
          loadDataFromLocal();
@@ -171,7 +211,18 @@ const App: React.FC = () => {
   const loadDataFromLocal = () => {
       const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS);
       const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS);
-      if (localCustomers) setCustomers(localCustomers);
+      
+      // We still need to apply the queue to local storage data in case 
+      // the local storage 'CUSTOMERS' key was stale but 'SYNC_QUEUE' had new items
+      const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+      
+      if (localCustomers) {
+          // Note: mapCustomerToDB reverse mapping is needed if we want to reuse applySyncQueueToData
+          // But simpler is to assume local storage is "App State" (camelCase) and Queue is "DB State" (snake_case).
+          // To avoid complexity, let's just trust local storage + logic in add/update functions handled state updates.
+          // However, to be robust:
+          setCustomers(localCustomers);
+      }
       if (localTransactions) setTransactions(localTransactions);
   }
 
@@ -225,11 +276,11 @@ const App: React.FC = () => {
     }
     
     if (successfullySyncedQueueIds.size > 0) {
-        const remainingQueue = queue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
+        // Reload queue from storage to handle any new items added while syncing
+        const currentQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+        const remainingQueue = currentQueue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
         saveToLocal(STORAGE_KEYS.SYNC_QUEUE, remainingQueue);
-        console.log(`${successfullySyncedQueueIds.size} items synced. Local state is source of truth.`);
-        // IMPORTANT: DO NOT re-fetch data here. It wipes out other optimistic updates.
-        // The local state is the source of truth.
+        console.log(`${successfullySyncedQueueIds.size} items synced.`);
     } else {
       console.log("Sync failed for all items in this run. They will be retried later.");
     }
@@ -244,6 +295,9 @@ const App: React.FC = () => {
       console.log("App is online.");
       setIsOnline(true);
       processSyncQueue();
+      // Re-fetch data when coming back online to ensure consistency, 
+      // but the optimistic merge logic will keep local changes safe.
+      fetchData(); 
     };
     const handleOffline = () => {
       console.log("App is offline.");
@@ -253,9 +307,8 @@ const App: React.FC = () => {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     
-    // Also try to sync on load, just in case
-    const syncInterval = setInterval(processSyncQueue, 30000); // Try to sync every 30 seconds
-    setTimeout(processSyncQueue, 1000); // And once on load
+    const syncInterval = setInterval(processSyncQueue, 30000); 
+    setTimeout(processSyncQueue, 1000); 
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -265,14 +318,7 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-      saveToLocal(STORAGE_KEYS.CUSTOMERS, customers);
-  }, [customers]);
-
-  useEffect(() => {
-      saveToLocal(STORAGE_KEYS.TRANSACTIONS, transactions);
-  }, [transactions]);
-
-  useEffect(() => {
+      // Save holidays to local storage when they change.
       saveToLocal(STORAGE_KEYS.HOLIDAYS, customHolidays);
   }, [customHolidays]);
 
@@ -317,14 +363,19 @@ const App: React.FC = () => {
         isEdited: false
     };
 
-    setCustomers(prev => [...prev, newCustomer]);
-    setTransactions(prev => [...prev, newTransaction]);
-    setIsCustomerModalOpen(false);
+    const nextCustomers = [...customers, newCustomer];
+    const nextTransactions = [...transactions, newTransaction];
 
+    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+    setCustomers(nextCustomers);
+    setTransactions(nextTransactions);
+    
     addToSyncQueue({ id: newCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newCustomer) });
     addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
     
-    processSyncQueue();
+    setIsCustomerModalOpen(false);
+    setTimeout(processSyncQueue, 100);
   };
 
   const addSaver = (data: { name: string; amount: number; date: string }) => {
@@ -343,32 +394,44 @@ const App: React.FC = () => {
       description: 'Tabungan awal', paymentMethod: 'Cash',
     };
 
-    setCustomers(prev => [...prev, newSaverAsCustomer]);
-    setTransactions(prev => [...prev, newTransaction]);
-    setIsSaverModalOpen(false);
+    const nextCustomers = [...customers, newSaverAsCustomer];
+    const nextTransactions = [...transactions, newTransaction];
     
+    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+    setCustomers(nextCustomers);
+    setTransactions(nextTransactions);
+
     addToSyncQueue({ id: newSaverAsCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newSaverAsCustomer) });
     addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
     
-    processSyncQueue();
+    setIsSaverModalOpen(false);
+    setTimeout(processSyncQueue, 100);
   };
 
   const updateCustomer = (updatedCustomer: Customer) => {
-    setCustomers(prevCustomers => prevCustomers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
+    const nextCustomers = customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c);
+    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+    setCustomers(nextCustomers);
+
     addToSyncQueue({ id: updatedCustomer.id, action: 'UPDATE', table: 'customers', payload: mapCustomerToDB(updatedCustomer) });
-    processSyncQueue();
+    setTimeout(processSyncQueue, 100);
   };
 
   const deleteCustomer = (customerId: string) => {
-    setCustomers(prev => prev.filter(c => c.id !== customerId));
-    setTransactions(prev => prev.filter(t => t.customerId !== customerId));
+    const nextCustomers = customers.filter(c => c.id !== customerId);
+    const nextTransactions = transactions.filter(t => t.customerId !== customerId);
+    
+    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+    setCustomers(nextCustomers);
+    setTransactions(nextTransactions);
+
     if (transactionTarget?.id === customerId) {
           setTransactionTarget(null);
     }
     addToSyncQueue({ id: customerId, action: 'DELETE', table: 'customers', payload: null });
-    // Note: Server-side cascade delete should handle transactions.
-    // Locally, we've already removed them.
-    processSyncQueue();
+    setTimeout(processSyncQueue, 100);
   };
 
   const handleArchiveToggle = (customerId: string) => {
@@ -381,6 +444,7 @@ const App: React.FC = () => {
   };
   
   const recalculateCustomerStatus = (customerId: string, allTransactions: Transaction[]) => {
+      // Find customer from the main state, as this function is a utility
       const customer = customers.find(c => c.id === customerId);
       if (customer && customer.loanAmount > 0 && customer.status !== 'arsip') {
         const totalRepayments = allTransactions
@@ -393,6 +457,7 @@ const App: React.FC = () => {
 
         if (customer.status !== newStatus) {
            const updatedCustomer: Customer = { ...customer, status: newStatus };
+           // This will trigger its own save and sync
            updateCustomer(updatedCustomer);
         }
       }
@@ -404,39 +469,45 @@ const App: React.FC = () => {
       id: `TRX-${Date.now()}`,
     };
     
-    const updatedTransactions = [...transactions, newTransaction];
-    setTransactions(updatedTransactions);
-    setTransactionTarget(null);
+    const nextTransactions = [...transactions, newTransaction];
+    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+    setTransactions(nextTransactions);
     
     addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    processSyncQueue();
+    
+    setTransactionTarget(null);
+    setTimeout(processSyncQueue, 100);
 
     if (transactionData.type === TransactionType.REPAYMENT) {
-        recalculateCustomerStatus(transactionData.customerId, updatedTransactions);
+        recalculateCustomerStatus(transactionData.customerId, nextTransactions);
     }
   };
 
   const updateTransaction = (updatedTransaction: Transaction) => {
     const transactionToSave = { ...updatedTransaction, isEdited: true };
-    const updatedTransactions = transactions.map(t => t.id === updatedTransaction.id ? transactionToSave : t);
-    setTransactions(updatedTransactions);
+    const nextTransactions = transactions.map(t => t.id === updatedTransaction.id ? transactionToSave : t);
+
+    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+    setTransactions(nextTransactions);
 
     addToSyncQueue({ id: transactionToSave.id, action: 'UPDATE', table: 'transactions', payload: mapTransactionToDB(transactionToSave) });
-    processSyncQueue();
+    setTimeout(processSyncQueue, 100);
 
-    recalculateCustomerStatus(updatedTransaction.customerId, updatedTransactions);
+    recalculateCustomerStatus(updatedTransaction.customerId, nextTransactions);
   };
 
   const deleteTransaction = (transactionId: string) => {
     const transactionToDelete = transactions.find(t => t.id === transactionId);
     if (transactionToDelete) {
-      const updatedTransactions = transactions.filter(t => t.id !== transactionId);
-      setTransactions(updatedTransactions);
+      const nextTransactions = transactions.filter(t => t.id !== transactionId);
+      
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+      setTransactions(nextTransactions);
       
       addToSyncQueue({ id: transactionId, action: 'DELETE', table: 'transactions', payload: null });
-      processSyncQueue();
+      setTimeout(processSyncQueue, 100);
 
-      recalculateCustomerStatus(transactionToDelete.customerId, updatedTransactions);
+      recalculateCustomerStatus(transactionToDelete.customerId, nextTransactions);
     }
   };
 
