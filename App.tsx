@@ -22,7 +22,8 @@ export interface DateRange {
 
 // --- OFFLINE SYNC UTILITIES ---
 interface SyncQueueItem {
-  id: string;
+  queueId: string; // Unique ID for the queue item itself to prevent duplication issues
+  id: string; // ID of the customer or transaction record
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   table: 'customers' | 'transactions';
   payload: any;
@@ -115,9 +116,13 @@ const App: React.FC = () => {
     }
   };
 
-  const addToSyncQueue = (item: SyncQueueItem) => {
+  const addToSyncQueue = (item: Omit<SyncQueueItem, 'queueId'>) => {
     const queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-    queue.push(item);
+    const newItem: SyncQueueItem = {
+      ...item,
+      queueId: `Q-${Date.now()}-${Math.random()}`
+    };
+    queue.push(newItem);
     saveToLocal(STORAGE_KEYS.SYNC_QUEUE, queue);
   };
 
@@ -158,46 +163,57 @@ const App: React.FC = () => {
     setIsSyncing(true);
     console.log(`Processing ${queue.length} offline items...`);
 
-    const failedItems: SyncQueueItem[] = [];
+    const successfullySyncedQueueIds = new Set<string>();
 
     for (const item of queue) {
       let error = null;
-      
-      if (item.table === 'customers') {
-        if (item.action === 'INSERT') {
-          const { error: err } = await supabase.from('customers').insert([item.payload]);
-          error = err;
-        } else if (item.action === 'UPDATE') {
-          const { error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id);
-          error = err;
-        } else if (item.action === 'DELETE') {
-          const { error: err } = await supabase.from('customers').delete().eq('id', item.id);
-          error = err;
+      try {
+        if (item.table === 'customers') {
+          if (item.action === 'INSERT') {
+            const { error: err } = await supabase.from('customers').insert([item.payload]);
+            error = err;
+          } else if (item.action === 'UPDATE') {
+            const { error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id);
+            error = err;
+          } else if (item.action === 'DELETE') {
+            const { error: err } = await supabase.from('customers').delete().eq('id', item.id);
+            error = err;
+          }
+        } else if (item.table === 'transactions') {
+           if (item.action === 'INSERT') {
+            const { error: err } = await supabase.from('transactions').insert([item.payload]);
+            error = err;
+          } else if (item.action === 'UPDATE') {
+            const { error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id);
+            error = err;
+          } else if (item.action === 'DELETE') {
+            const { error: err } = await supabase.from('transactions').delete().eq('id', item.id);
+            error = err;
+          }
         }
-      } else if (item.table === 'transactions') {
-         if (item.action === 'INSERT') {
-          const { error: err } = await supabase.from('transactions').insert([item.payload]);
-          error = err;
-        } else if (item.action === 'UPDATE') {
-          const { error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id);
-          error = err;
-        } else if (item.action === 'DELETE') {
-          const { error: err } = await supabase.from('transactions').delete().eq('id', item.id);
-          error = err;
-        }
+      } catch (e) {
+          error = e;
       }
 
       if (error) {
-        console.error("Sync error for item:", item, error);
+        console.error("Sync error for item, it will be retried:", item, error);
+      } else {
+        successfullySyncedQueueIds.add(item.queueId);
       }
     }
     
-    // Clear queue after processing
-    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, failedItems);
+    const remainingQueue = queue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
+    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, remainingQueue);
     setIsSyncing(false);
     
-    // Refresh data to ensure consistency
-    fetchData();
+    const itemsSyncedCount = successfullySyncedQueueIds.size;
+    if (itemsSyncedCount > 0) {
+      console.log(`${itemsSyncedCount} items synced successfully. Refreshing data...`);
+      // Refresh data to ensure consistency
+      await fetchData();
+    } else if (queue.length > 0) {
+      console.log("Sync failed for all items in this run. They will be retried later.");
+    }
   };
 
   useEffect(() => {
@@ -211,6 +227,9 @@ const App: React.FC = () => {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    
+    // Also try to sync on load, just in case
+    processSyncQueue();
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -219,11 +238,13 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-      if (customers.length > 0) saveToLocal(STORAGE_KEYS.CUSTOMERS, customers);
+      // Save to local immediately on change for offline resilience
+      saveToLocal(STORAGE_KEYS.CUSTOMERS, customers);
   }, [customers]);
 
   useEffect(() => {
-      if (transactions.length > 0) saveToLocal(STORAGE_KEYS.TRANSACTIONS, transactions);
+      // Save to local immediately on change for offline resilience
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, transactions);
   }, [transactions]);
 
   // Save holidays whenever changed
