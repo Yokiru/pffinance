@@ -171,66 +171,79 @@ const App: React.FC = () => {
     const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
 
     // CRITICAL FIX: If there are pending sync items, DO NOT fetch from server
-    // This prevents server data from overwriting local changes that haven't been synced yet
     if (syncQueue.length > 0) {
-      console.log(`⚠️ ${syncQueue.length} pending sync items found. Preserving local data to prevent overwrite.`);
+      console.log(`⚠️ ${syncQueue.length} pending sync items found. Preserving local data.`);
       loadDataFromLocal();
       return;
     }
+
+    // Always load local data first
+    const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS) || [];
+    const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
 
     if (navigator.onLine) {
       try {
         console.log("Online: Fetching latest data from Supabase...");
 
-        // Fetch raw DB data (snake_case)
         const { data: customersDB, error: cError } = await supabase.from('customers').select('*');
         if (cError) throw cError;
 
         const { data: transactionsDB, error: tError } = await supabase
           .from('transactions')
           .select('*')
-          .order('date', { ascending: false }); // Order by newest first
+          .order('date', { ascending: false });
         if (tError) throw tError;
 
-        // --- RLS FALLBACK PROTECTION ---
-        // If server returns empty list [] (likely due to RLS enabled and no policy), 
-        // but we have local data, DO NOT overwrite local data with empty list.
-        // Instead, throw error to trigger the catch block which loads local data.
-        const localCustomersRaw = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-        const hasLocalCustomers = localCustomersRaw && JSON.parse(localCustomersRaw).length > 0;
+        // Map server data to App format
+        const serverCustomers = (customersDB || []).map(mapCustomerFromDB);
+        const serverTransactions = (transactionsDB || []).map(mapTransactionFromDB);
 
-        if ((!customersDB || customersDB.length === 0) && hasLocalCustomers) {
-          console.warn("⚠️ Data server kosong tapi data lokal ada. Kemungkinan RLS aktif blocking read. Menggunakan data lokal.");
-          throw new Error("RLS_BLOCKING_SUSPECTED");
-        }
-        // -------------------------------
+        // CRITICAL: MERGE instead of REPLACE
+        // Keep local items that don't exist in server (they might not have synced yet)
+        const serverCustomerIds = new Set(serverCustomers.map(c => c.id));
+        const serverTransactionIds = new Set(serverTransactions.map(t => t.id));
 
-        // Re-check sync queue in case new items were added while fetching
-        const currentSyncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-        if (currentSyncQueue.length > 0) {
-          console.log(`⚠️ New sync items detected during fetch. Aborting server data update.`);
-          loadDataFromLocal();
-          return;
+        // Find local items not in server
+        const localOnlyCustomers = localCustomers.filter(c => !serverCustomerIds.has(c.id));
+        const localOnlyTransactions = localTransactions.filter(t => !serverTransactionIds.has(t.id));
+
+        if (localOnlyCustomers.length > 0 || localOnlyTransactions.length > 0) {
+          console.log(`📦 MERGE: Preserving ${localOnlyCustomers.length} local customers and ${localOnlyTransactions.length} local transactions not in server`);
         }
 
-        // Map to App format
-        const mappedCustomers = (customersDB || []).map(mapCustomerFromDB);
-        const mappedTransactions = (transactionsDB || []).map(mapTransactionFromDB);
+        // Merge: server data + local-only data
+        const mergedCustomers = [...serverCustomers, ...localOnlyCustomers];
+        const mergedTransactions = [...serverTransactions, ...localOnlyTransactions];
 
-        setCustomers(mappedCustomers);
-        setTransactions(mappedTransactions);
+        setCustomers(mergedCustomers);
+        setTransactions(mergedTransactions);
 
-        // Save the merged "Source of Truth" to local storage
-        saveToLocal(STORAGE_KEYS.CUSTOMERS, mappedCustomers);
-        saveToLocal(STORAGE_KEYS.TRANSACTIONS, mappedTransactions);
+        // Save merged data to local storage
+        saveToLocal(STORAGE_KEYS.CUSTOMERS, mergedCustomers);
+        saveToLocal(STORAGE_KEYS.TRANSACTIONS, mergedTransactions);
 
-        console.log("Successfully fetched and updated local data.");
+        // Re-queue local-only items for sync
+        for (const customer of localOnlyCustomers) {
+          console.log(`🔄 Re-queuing customer for sync: ${customer.name}`);
+          addToSyncQueue({ id: customer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(customer) });
+        }
+        for (const transaction of localOnlyTransactions) {
+          console.log(`🔄 Re-queuing transaction for sync: ${transaction.id}`);
+          addToSyncQueue({ id: transaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(transaction) });
+        }
+
+        // Trigger sync if there are re-queued items
+        if (localOnlyCustomers.length > 0 || localOnlyTransactions.length > 0) {
+          setTimeout(processSyncQueue, 500);
+        }
+
+        console.log("✅ Successfully fetched and merged data.");
       } catch (error) {
-        console.error("Failed to fetch data from Supabase, loading from local storage.", error);
+        console.error("Failed to fetch from Supabase, using local data.", error);
         loadDataFromLocal();
       }
     } else {
-      console.log("Offline, loading data from local storage.");
+      console.log("Offline, using local data.");
       loadDataFromLocal();
     }
   };
