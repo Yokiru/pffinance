@@ -1,4 +1,4 @@
-const CACHE_NAME = 'monetto-cache-v6'; // Bump version for clean update
+const CACHE_NAME = 'monetto-cache-v7'; // Bump version - fixed POST caching bug
 const urlsToCache = [
   '/',
   '/index.html',
@@ -19,6 +19,19 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Skip caching for:
+  // 1. Non-GET requests (POST, PUT, DELETE etc) - Cache API only supports GET
+  // 2. Supabase API calls - these should always be fresh from network
+  const url = new URL(event.request.url);
+  const isNonGetRequest = event.request.method !== 'GET';
+  const isSupabaseRequest = url.hostname.includes('supabase');
+
+  if (isNonGetRequest || isSupabaseRequest) {
+    // Just fetch from network, don't cache
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {

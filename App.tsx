@@ -143,19 +143,19 @@ const App: React.FC = () => {
 
     tableQueue.forEach(item => {
       if (item.action === 'INSERT') {
-         // Deduplicate: if ID already exists, remove it first (shouldn't happen on insert but good for safety)
-         merged = merged.filter(d => d.id !== item.payload.id);
-         merged.push(item.payload);
+        // Deduplicate: if ID already exists, remove it first (shouldn't happen on insert but good for safety)
+        merged = merged.filter(d => d.id !== item.payload.id);
+        merged.push(item.payload);
       } else if (item.action === 'UPDATE') {
-         const index = merged.findIndex(d => d.id === item.payload.id);
-         if (index >= 0) {
-            merged[index] = { ...merged[index], ...item.payload };
-         } else {
-            // If updating an item that isn't in server data (e.g. created offline), append it
-            merged.push(item.payload);
-         }
+        const index = merged.findIndex(d => d.id === item.payload.id);
+        if (index >= 0) {
+          merged[index] = { ...merged[index], ...item.payload };
+        } else {
+          // If updating an item that isn't in server data (e.g. created offline), append it
+          merged.push(item.payload);
+        }
       } else if (item.action === 'DELETE') {
-         merged = merged.filter(d => d.id !== item.id);
+        merged = merged.filter(d => d.id !== item.id);
       }
     });
 
@@ -170,18 +170,26 @@ const App: React.FC = () => {
     // Always load the queue first to apply optimistic updates
     const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
 
+    // CRITICAL FIX: If there are pending sync items, DO NOT fetch from server
+    // This prevents server data from overwriting local changes that haven't been synced yet
+    if (syncQueue.length > 0) {
+      console.log(`⚠️ ${syncQueue.length} pending sync items found. Preserving local data to prevent overwrite.`);
+      loadDataFromLocal();
+      return;
+    }
+
     if (navigator.onLine) {
       try {
         console.log("Online: Fetching latest data from Supabase...");
-        
+
         // Fetch raw DB data (snake_case)
         const { data: customersDB, error: cError } = await supabase.from('customers').select('*');
         if (cError) throw cError;
 
         const { data: transactionsDB, error: tError } = await supabase
-            .from('transactions')
-            .select('*')
-            .order('date', { ascending: false }); // Order by newest first
+          .from('transactions')
+          .select('*')
+          .order('date', { ascending: false }); // Order by newest first
         if (tError) throw tError;
 
         // --- RLS FALLBACK PROTECTION ---
@@ -192,113 +200,146 @@ const App: React.FC = () => {
         const hasLocalCustomers = localCustomersRaw && JSON.parse(localCustomersRaw).length > 0;
 
         if ((!customersDB || customersDB.length === 0) && hasLocalCustomers) {
-            console.warn("⚠️ Data server kosong tapi data lokal ada. Kemungkinan RLS aktif blocking read. Menggunakan data lokal.");
-            throw new Error("RLS_BLOCKING_SUSPECTED");
+          console.warn("⚠️ Data server kosong tapi data lokal ada. Kemungkinan RLS aktif blocking read. Menggunakan data lokal.");
+          throw new Error("RLS_BLOCKING_SUSPECTED");
         }
         // -------------------------------
 
-        // Apply local queue changes to the DB data BEFORE mapping to App state
-        // This ensures pending offline changes are visible immediately
-        const mergedCustomersDB = applySyncQueueToData(customersDB || [], syncQueue, 'customers');
-        const mergedTransactionsDB = applySyncQueueToData(transactionsDB || [], syncQueue, 'transactions');
+        // Re-check sync queue in case new items were added while fetching
+        const currentSyncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+        if (currentSyncQueue.length > 0) {
+          console.log(`⚠️ New sync items detected during fetch. Aborting server data update.`);
+          loadDataFromLocal();
+          return;
+        }
 
         // Map to App format
-        const mappedCustomers = mergedCustomersDB.map(mapCustomerFromDB);
-        const mappedTransactions = mergedTransactionsDB.map(mapTransactionFromDB);
+        const mappedCustomers = (customersDB || []).map(mapCustomerFromDB);
+        const mappedTransactions = (transactionsDB || []).map(mapTransactionFromDB);
 
         setCustomers(mappedCustomers);
         setTransactions(mappedTransactions);
-        
+
         // Save the merged "Source of Truth" to local storage
         saveToLocal(STORAGE_KEYS.CUSTOMERS, mappedCustomers);
         saveToLocal(STORAGE_KEYS.TRANSACTIONS, mappedTransactions);
-        
-        console.log("Successfully fetched, merged, and updated local data.");
+
+        console.log("Successfully fetched and updated local data.");
       } catch (error) {
-         console.error("Failed to fetch data from Supabase, loading from local storage.", error);
-         loadDataFromLocal();
+        console.error("Failed to fetch data from Supabase, loading from local storage.", error);
+        loadDataFromLocal();
       }
     } else {
       console.log("Offline, loading data from local storage.");
       loadDataFromLocal();
     }
   };
-  
+
   const loadDataFromLocal = () => {
-      const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS);
-      const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS);
-      
-      // We still need to apply the queue to local storage data in case 
-      // the local storage 'CUSTOMERS' key was stale but 'SYNC_QUEUE' had new items
-      const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-      
-      if (localCustomers) {
-          // Note: mapCustomerToDB reverse mapping is needed if we want to reuse applySyncQueueToData
-          // But simpler is to assume local storage is "App State" (camelCase) and Queue is "DB State" (snake_case).
-          // To avoid complexity, let's just trust local storage + logic in add/update functions handled state updates.
-          // However, to be robust:
-          setCustomers(localCustomers);
-      }
-      if (localTransactions) setTransactions(localTransactions);
+    const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS);
+    const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS);
+
+    // We still need to apply the queue to local storage data in case 
+    // the local storage 'CUSTOMERS' key was stale but 'SYNC_QUEUE' had new items
+    const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+
+    if (localCustomers) {
+      // Note: mapCustomerToDB reverse mapping is needed if we want to reuse applySyncQueueToData
+      // But simpler is to assume local storage is "App State" (camelCase) and Queue is "DB State" (snake_case).
+      // To avoid complexity, let's just trust local storage + logic in add/update functions handled state updates.
+      // However, to be robust:
+      setCustomers(localCustomers);
+    }
+    if (localTransactions) setTransactions(localTransactions);
   }
 
   const processSyncQueue = async () => {
     if (!navigator.onLine || isSyncing) return;
-    
+
     let queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
     if (queue.length === 0) return;
 
     setIsSyncing(true);
-    console.log(`Processing ${queue.length} offline items...`);
+    console.log(`🔄 SYNC: Processing ${queue.length} offline items...`);
 
     const successfullySyncedQueueIds = new Set<string>();
+    const failedItems: SyncQueueItem[] = [];
 
     for (const item of queue) {
       let error = null;
+      let syncSuccess = false;
+
       try {
+        console.log(`🔄 SYNC: Processing ${item.action} for ${item.table} - ID: ${item.id}`);
+
         if (item.table === 'customers') {
           if (item.action === 'INSERT') {
-            const { error: err } = await supabase.from('customers').upsert([item.payload]);
+            // Use upsert with select to verify data was actually written
+            const { data, error: err } = await supabase.from('customers').upsert([item.payload]).select();
             error = err;
+            // Verify data was returned (RLS could silently block writes)
+            syncSuccess = !err && data && data.length > 0;
+            if (!syncSuccess && !err) {
+              console.error(`⚠️ RLS BLOCKED: Customer insert returned no data - check Supabase RLS policies!`);
+            }
           } else if (item.action === 'UPDATE') {
-            const { error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id);
+            const { data, error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id).select();
             error = err;
+            syncSuccess = !err && data && data.length > 0;
+            if (!syncSuccess && !err) {
+              console.error(`⚠️ RLS BLOCKED: Customer update returned no data!`);
+            }
           } else if (item.action === 'DELETE') {
             const { error: err } = await supabase.from('customers').delete().eq('id', item.id);
             error = err;
+            syncSuccess = !err; // DELETE doesn't return data
           }
         } else if (item.table === 'transactions') {
-           if (item.action === 'INSERT') {
-            const { error: err } = await supabase.from('transactions').upsert([item.payload]);
+          if (item.action === 'INSERT') {
+            const { data, error: err } = await supabase.from('transactions').upsert([item.payload]).select();
             error = err;
+            syncSuccess = !err && data && data.length > 0;
+            if (!syncSuccess && !err) {
+              console.error(`⚠️ RLS BLOCKED: Transaction insert returned no data - check Supabase RLS policies!`);
+            }
           } else if (item.action === 'UPDATE') {
-            const { error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id);
+            const { data, error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id).select();
             error = err;
+            syncSuccess = !err && data && data.length > 0;
+            if (!syncSuccess && !err) {
+              console.error(`⚠️ RLS BLOCKED: Transaction update returned no data!`);
+            }
           } else if (item.action === 'DELETE') {
             const { error: err } = await supabase.from('transactions').delete().eq('id', item.id);
             error = err;
+            syncSuccess = !err;
           }
         }
       } catch (e) {
-          error = e;
+        error = e;
+        syncSuccess = false;
       }
 
-      if (error) {
-        console.error("Sync error for item, it will be retried:", item, error);
+      if (error || !syncSuccess) {
+        console.error(`❌ SYNC FAILED for ${item.table}/${item.id}:`, error || 'No data returned (RLS?)');
+        failedItems.push(item);
       } else {
-        console.log("Successfully synced item:", item.id);
+        console.log(`✅ SYNC VERIFIED: ${item.table}/${item.id}`);
         successfullySyncedQueueIds.add(item.queueId);
       }
     }
-    
+
     if (successfullySyncedQueueIds.size > 0) {
-        // Reload queue from storage to handle any new items added while syncing
-        const currentQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-        const remainingQueue = currentQueue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
-        saveToLocal(STORAGE_KEYS.SYNC_QUEUE, remainingQueue);
-        console.log(`${successfullySyncedQueueIds.size} items synced.`);
-    } else {
-      console.log("Sync failed for all items in this run. They will be retried later.");
+      // Reload queue from storage to handle any new items added while syncing
+      const currentQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+      const remainingQueue = currentQueue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
+      saveToLocal(STORAGE_KEYS.SYNC_QUEUE, remainingQueue);
+      console.log(`✅ SYNC COMPLETE: ${successfullySyncedQueueIds.size} items synced, ${remainingQueue.length} remaining.`);
+    }
+
+    // Alert user if there are failed items (potential data loss risk)
+    if (failedItems.length > 0) {
+      console.error(`⚠️ SYNC WARNING: ${failedItems.length} items failed to sync!`, failedItems);
     }
 
     setIsSyncing(false);
@@ -307,13 +348,14 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
 
-    const handleOnline = () => {
+    const handleOnline = async () => {
       console.log("App is online.");
       setIsOnline(true);
-      processSyncQueue();
-      // Re-fetch data when coming back online to ensure consistency, 
-      // but the optimistic merge logic will keep local changes safe.
-      fetchData(); 
+      // CRITICAL FIX: Wait for sync to complete BEFORE fetching new data
+      // This prevents local data from being overwritten before it's synced to server
+      await processSyncQueue();
+      // Only fetch after sync is done
+      await fetchData();
     };
     const handleOffline = () => {
       console.log("App is offline.");
@@ -322,9 +364,9 @@ const App: React.FC = () => {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
-    const syncInterval = setInterval(processSyncQueue, 30000); 
-    setTimeout(processSyncQueue, 1000); 
+
+    const syncInterval = setInterval(processSyncQueue, 30000);
+    setTimeout(processSyncQueue, 1000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -332,10 +374,10 @@ const App: React.FC = () => {
       clearInterval(syncInterval);
     };
   }, []);
-  
+
   useEffect(() => {
-      // Save holidays to local storage when they change.
-      saveToLocal(STORAGE_KEYS.HOLIDAYS, customHolidays);
+    // Save holidays to local storage when they change.
+    saveToLocal(STORAGE_KEYS.HOLIDAYS, customHolidays);
   }, [customHolidays]);
 
 
@@ -355,28 +397,28 @@ const App: React.FC = () => {
   const customerMap = useMemo(() => {
     return new Map(customers.map(c => [c.id, c]));
   }, [customers]);
-  
+
   const addCustomer = (customerData: CustomerFormData) => {
     const { disbursementMethod, ...data } = customerData;
     const newCustomer: Customer = {
       ...data,
       id: `CUST-${Date.now()}`,
       status: 'aktif',
-      role: 'borrower', 
+      role: 'borrower',
     };
     const todayStr = new Date().toISOString().split('T')[0];
-    let transactionDateIso = newCustomer.loanDate === todayStr 
-        ? new Date().toISOString() 
-        : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
+    let transactionDateIso = newCustomer.loanDate === todayStr
+      ? new Date().toISOString()
+      : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
     const newTransaction: Transaction = {
-        id: `TRX-${Date.now()}`,
-        customerId: newCustomer.id,
-        type: TransactionType.LOAN,
-        amount: newCustomer.loanAmount,
-        date: transactionDateIso,
-        description: 'Pinjaman Awal',
-        paymentMethod: disbursementMethod || 'Cash',
-        isEdited: false
+      id: `TRX-${Date.now()}`,
+      customerId: newCustomer.id,
+      type: TransactionType.LOAN,
+      amount: newCustomer.loanAmount,
+      date: transactionDateIso,
+      description: 'Pinjaman Awal',
+      paymentMethod: disbursementMethod || 'Cash',
+      isEdited: false
     };
 
     const nextCustomers = [...customers, newCustomer];
@@ -386,10 +428,10 @@ const App: React.FC = () => {
     saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
     setCustomers(nextCustomers);
     setTransactions(nextTransactions);
-    
+
     addToSyncQueue({ id: newCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newCustomer) });
     addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    
+
     setIsCustomerModalOpen(false);
     setTimeout(processSyncQueue, 100);
   };
@@ -412,7 +454,7 @@ const App: React.FC = () => {
 
     const nextCustomers = [...customers, newSaverAsCustomer];
     const nextTransactions = [...transactions, newTransaction];
-    
+
     saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
     saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
     setCustomers(nextCustomers);
@@ -420,7 +462,7 @@ const App: React.FC = () => {
 
     addToSyncQueue({ id: newSaverAsCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newSaverAsCustomer) });
     addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    
+
     setIsSaverModalOpen(false);
     setTimeout(processSyncQueue, 100);
   };
@@ -437,65 +479,65 @@ const App: React.FC = () => {
   const deleteCustomer = (customerId: string) => {
     const nextCustomers = customers.filter(c => c.id !== customerId);
     const nextTransactions = transactions.filter(t => t.customerId !== customerId);
-    
+
     saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
     saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
     setCustomers(nextCustomers);
     setTransactions(nextTransactions);
 
     if (transactionTarget?.id === customerId) {
-          setTransactionTarget(null);
+      setTransactionTarget(null);
     }
     addToSyncQueue({ id: customerId, action: 'DELETE', table: 'customers', payload: null });
     setTimeout(processSyncQueue, 100);
   };
 
   const handleArchiveToggle = (customerId: string) => {
-      const customer = customers.find(c => c.id === customerId);
-      if (customer) {
-        const newStatus = customer.status === 'arsip' ? 'aktif' : 'arsip';
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      const newStatus = customer.status === 'arsip' ? 'aktif' : 'arsip';
+      const updatedCustomer: Customer = { ...customer, status: newStatus };
+      updateCustomer(updatedCustomer);
+    }
+  };
+
+  const recalculateCustomerStatus = (customerId: string, allTransactions: Transaction[]) => {
+    // Find customer from the main state, as this function is a utility
+    const customer = customers.find(c => c.id === customerId);
+    if (customer && customer.loanAmount > 0 && customer.status !== 'arsip') {
+      const totalRepayments = allTransactions
+        .filter(t => t.customerId === customer.id && t.type === TransactionType.REPAYMENT)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      const totalLoanWithInterest = customer.loanAmount * (1 + customer.interestRate / 100);
+      const isPaidOff = totalRepayments >= totalLoanWithInterest;
+      const newStatus: Customer['status'] = isPaidOff ? 'lunas' : 'aktif';
+
+      if (customer.status !== newStatus) {
         const updatedCustomer: Customer = { ...customer, status: newStatus };
+        // This will trigger its own save and sync
         updateCustomer(updatedCustomer);
       }
+    }
   };
-  
-  const recalculateCustomerStatus = (customerId: string, allTransactions: Transaction[]) => {
-      // Find customer from the main state, as this function is a utility
-      const customer = customers.find(c => c.id === customerId);
-      if (customer && customer.loanAmount > 0 && customer.status !== 'arsip') {
-        const totalRepayments = allTransactions
-          .filter(t => t.customerId === customer.id && t.type === TransactionType.REPAYMENT)
-          .reduce((sum, t) => sum + t.amount, 0);
-        
-        const totalLoanWithInterest = customer.loanAmount * (1 + customer.interestRate / 100);
-        const isPaidOff = totalRepayments >= totalLoanWithInterest;
-        const newStatus: Customer['status'] = isPaidOff ? 'lunas' : 'aktif';
 
-        if (customer.status !== newStatus) {
-           const updatedCustomer: Customer = { ...customer, status: newStatus };
-           // This will trigger its own save and sync
-           updateCustomer(updatedCustomer);
-        }
-      }
-  };
-  
   const handleCreateTransactionFromNumpad = (transactionData: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = {
       ...transactionData,
       id: `TRX-${Date.now()}`,
     };
-    
+
     const nextTransactions = [...transactions, newTransaction];
     saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
     setTransactions(nextTransactions);
-    
+
     addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-    
+
     setTransactionTarget(null);
     setTimeout(processSyncQueue, 100);
 
     if (transactionData.type === TransactionType.REPAYMENT) {
-        recalculateCustomerStatus(transactionData.customerId, nextTransactions);
+      recalculateCustomerStatus(transactionData.customerId, nextTransactions);
     }
   };
 
@@ -516,10 +558,10 @@ const App: React.FC = () => {
     const transactionToDelete = transactions.find(t => t.id === transactionId);
     if (transactionToDelete) {
       const nextTransactions = transactions.filter(t => t.id !== transactionId);
-      
+
       saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
       setTransactions(nextTransactions);
-      
+
       addToSyncQueue({ id: transactionId, action: 'DELETE', table: 'transactions', payload: null });
       setTimeout(processSyncQueue, 100);
 
@@ -538,8 +580,8 @@ const App: React.FC = () => {
   const handleWithdrawClick = (customer: Customer) => {
     setTransactionTarget(null);
     setTimeout(() => {
-        setTransactionMode('withdrawal');
-        setTransactionTarget(customer);
+      setTransactionMode('withdrawal');
+      setTransactionTarget(customer);
     }, 50);
   };
 
@@ -547,26 +589,26 @@ const App: React.FC = () => {
     <div className="font-sans min-h-screen text-gray-900 pb-28">
       {/* Offline Indicator */}
       {!isOnline && (
-          <div className="bg-red-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
-              OFFLINE MODE - Data disimpan secara lokal
-          </div>
+        <div className="bg-red-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
+          OFFLINE MODE - Data disimpan secara lokal
+        </div>
       )}
       {isSyncing && isOnline && (
-           <div className="bg-blue-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
-              SINKRONISASI DATA...
-          </div>
+        <div className="bg-blue-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
+          SINKRONISASI DATA...
+        </div>
       )}
 
       <main className={`flex-1 p-3 sm:p-6 lg:p-8 ${!isOnline || isSyncing ? 'pt-8' : ''}`}>
         {activePage === 'dashboard' && (
-          <Dashboard 
-            customers={customers} 
+          <Dashboard
+            customers={customers}
             dailyTransactions={filteredTransactions}
             allTransactions={transactions}
             customerMap={customerMap}
             dateRange={dateRange}
             setDateRange={setDateRange}
-            addTransaction={() => {}} // Deprecated, add from modals
+            addTransaction={() => { }} // Deprecated, add from modals
             customHolidays={customHolidays}
             setCustomHolidays={setCustomHolidays}
           />
@@ -576,8 +618,8 @@ const App: React.FC = () => {
             customers={customers.filter(c => c.role === 'borrower')}
             transactions={transactions}
             onCustomerSelect={(customer) => {
-                setTransactionMode('repayment');
-                setTransactionTarget(customer);
+              setTransactionMode('repayment');
+              setTransactionTarget(customer);
             }}
           />
         )}
@@ -586,41 +628,41 @@ const App: React.FC = () => {
             transactions={transactions}
             customerMap={customerMap}
             onSaverSelect={(customer) => {
-                setTransactionMode('savings');
-                setTransactionTarget(customer);
+              setTransactionMode('savings');
+              setTransactionTarget(customer);
             }}
           />
         )}
       </main>
-      <BottomNav 
-        activePage={activePage} 
-        setActivePage={setActivePage} 
+      <BottomNav
+        activePage={activePage}
+        setActivePage={setActivePage}
         onAddClick={handleFabClick}
         isVisible={!transactionTarget}
       />
       <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)}>
-          <CustomerForm onSubmit={addCustomer} onCancel={() => setIsCustomerModalOpen(false)} />
+        <CustomerForm onSubmit={addCustomer} onCancel={() => setIsCustomerModalOpen(false)} />
       </Modal>
       <Modal isOpen={isSaverModalOpen} onClose={() => setIsSaverModalOpen(false)} title="Tambah Penabung">
-          <SaverForm 
-            onSubmit={addSaver} 
-            onCancel={() => setIsSaverModalOpen(false)}
-          />
+        <SaverForm
+          onSubmit={addSaver}
+          onCancel={() => setIsSaverModalOpen(false)}
+        />
       </Modal>
       {transactionTarget && (
         <TransactionNumpadModal
-            customer={transactionTarget}
-            transactions={transactions}
-            onClose={() => setTransactionTarget(null)}
-            onSubmit={handleCreateTransactionFromNumpad}
-            onUpdateCustomer={updateCustomer}
-            onUpdateTransaction={updateTransaction}
-            onDeleteTransaction={deleteTransaction}
-            onDeleteCustomer={deleteCustomer}
-            onWithdrawClick={handleWithdrawClick}
-            onArchiveToggle={handleArchiveToggle}
-            mode={transactionMode}
-            customHolidays={customHolidays}
+          customer={transactionTarget}
+          transactions={transactions}
+          onClose={() => setTransactionTarget(null)}
+          onSubmit={handleCreateTransactionFromNumpad}
+          onUpdateCustomer={updateCustomer}
+          onUpdateTransaction={updateTransaction}
+          onDeleteTransaction={deleteTransaction}
+          onDeleteCustomer={deleteCustomer}
+          onWithdrawClick={handleWithdrawClick}
+          onArchiveToggle={handleArchiveToggle}
+          mode={transactionMode}
+          customHolidays={customHolidays}
         />
       )}
     </div>
