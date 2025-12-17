@@ -100,6 +100,69 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isExportImportOpen, setIsExportImportOpen] = useState(false);
 
+  // --- BROWSER HISTORY MANAGEMENT ---
+  // Handle browser back button properly for SPA navigation
+
+  // Custom navigation functions that push to browser history
+  const navigateToPage = (page: Page) => {
+    if (page !== activePage) {
+      window.history.pushState({ page, modal: null }, '', `#${page}`);
+      setActivePage(page);
+    }
+  };
+
+  const openModal = (modalType: 'customer' | 'saver' | 'export' | 'transaction', customer?: Customer, mode?: TransactionMode) => {
+    window.history.pushState({ page: activePage, modal: modalType, customerId: customer?.id, mode }, '', `#${activePage}/${modalType}`);
+
+    if (modalType === 'customer') setIsCustomerModalOpen(true);
+    else if (modalType === 'saver') setIsSaverModalOpen(true);
+    else if (modalType === 'export') setIsExportImportOpen(true);
+    else if (modalType === 'transaction' && customer) {
+      setTransactionTarget(customer);
+      if (mode) setTransactionMode(mode);
+    }
+  };
+
+  const closeAllModals = () => {
+    setIsCustomerModalOpen(false);
+    setIsSaverModalOpen(false);
+    setIsExportImportOpen(false);
+    setTransactionTarget(null);
+  };
+
+  // Handle browser back button
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state;
+
+      // If no state, we're at the initial page
+      if (!state) {
+        closeAllModals();
+        setActivePage('dashboard');
+        return;
+      }
+
+      // Close any open modals first
+      closeAllModals();
+
+      // Restore page state
+      if (state.page) {
+        setActivePage(state.page);
+      }
+
+      // If state had a modal open, we just closed it by going back
+      // So we don't reopen it - the modal is now closed
+    };
+
+    // Set initial state if not set
+    if (!window.history.state) {
+      window.history.replaceState({ page: activePage, modal: null }, '', `#${activePage}`);
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activePage]);
+
   // --- DATA PERSISTENCE & LOADING ---
 
   const saveToLocal = (key: string, data: any) => {
@@ -645,8 +708,10 @@ const App: React.FC = () => {
 
   const handleFabClick = () => {
     if (activePage === 'customers') {
+      window.history.pushState({ page: activePage, modal: 'customer' }, '', `#${activePage}/add`);
       setIsCustomerModalOpen(true);
     } else if (activePage === 'savings') {
+      window.history.pushState({ page: activePage, modal: 'saver' }, '', `#${activePage}/add`);
       setIsSaverModalOpen(true);
     }
   };
@@ -654,6 +719,7 @@ const App: React.FC = () => {
   const handleWithdrawClick = (customer: Customer) => {
     setTransactionTarget(null);
     setTimeout(() => {
+      window.history.pushState({ page: activePage, modal: 'transaction', customerId: customer.id }, '', `#${activePage}/withdraw`);
       setTransactionMode('withdrawal');
       setTransactionTarget(customer);
     }, 50);
@@ -675,7 +741,10 @@ const App: React.FC = () => {
 
       {/* Export/Import Button - Fixed position */}
       <button
-        onClick={() => setIsExportImportOpen(true)}
+        onClick={() => {
+          window.history.pushState({ page: activePage, modal: 'export' }, '', `#export`);
+          setIsExportImportOpen(true);
+        }}
         className="fixed top-2 right-2 z-40 bg-white shadow-lg rounded-full p-2 hover:bg-gray-100 transition-colors"
         title="Export/Import Data"
       >
@@ -703,6 +772,7 @@ const App: React.FC = () => {
             customers={customers.filter(c => c.role === 'borrower')}
             transactions={transactions}
             onCustomerSelect={(customer) => {
+              window.history.pushState({ page: activePage, modal: 'transaction', customerId: customer.id }, '', `#${activePage}/customer/${customer.id}`);
               setTransactionMode('repayment');
               setTransactionTarget(customer);
             }}
@@ -713,6 +783,7 @@ const App: React.FC = () => {
             transactions={transactions}
             customerMap={customerMap}
             onSaverSelect={(customer) => {
+              window.history.pushState({ page: activePage, modal: 'transaction', customerId: customer.id }, '', `#${activePage}/saver/${customer.id}`);
               setTransactionMode('savings');
               setTransactionTarget(customer);
             }}
@@ -721,24 +792,24 @@ const App: React.FC = () => {
       </main>
       <BottomNav
         activePage={activePage}
-        setActivePage={setActivePage}
+        setActivePage={navigateToPage}
         onAddClick={handleFabClick}
         isVisible={!transactionTarget}
       />
-      <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)}>
-        <CustomerForm onSubmit={addCustomer} onCancel={() => setIsCustomerModalOpen(false)} />
+      <Modal isOpen={isCustomerModalOpen} onClose={() => { setIsCustomerModalOpen(false); window.history.back(); }}>
+        <CustomerForm onSubmit={addCustomer} onCancel={() => { setIsCustomerModalOpen(false); window.history.back(); }} />
       </Modal>
-      <Modal isOpen={isSaverModalOpen} onClose={() => setIsSaverModalOpen(false)} title="Tambah Penabung">
+      <Modal isOpen={isSaverModalOpen} onClose={() => { setIsSaverModalOpen(false); window.history.back(); }} title="Tambah Penabung">
         <SaverForm
           onSubmit={addSaver}
-          onCancel={() => setIsSaverModalOpen(false)}
+          onCancel={() => { setIsSaverModalOpen(false); window.history.back(); }}
         />
       </Modal>
       {transactionTarget && (
         <TransactionNumpadModal
           customer={transactionTarget}
           transactions={transactions}
-          onClose={() => setTransactionTarget(null)}
+          onClose={() => { setTransactionTarget(null); window.history.back(); }}
           onSubmit={handleCreateTransactionFromNumpad}
           onUpdateCustomer={updateCustomer}
           onUpdateTransaction={updateTransaction}
@@ -752,7 +823,7 @@ const App: React.FC = () => {
       )}
       <ExportImportModal
         isOpen={isExportImportOpen}
-        onClose={() => setIsExportImportOpen(false)}
+        onClose={() => { setIsExportImportOpen(false); window.history.back(); }}
         customers={customers}
         transactions={transactions}
         onImportComplete={() => {
