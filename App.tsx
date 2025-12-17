@@ -10,6 +10,7 @@ import CustomerForm, { CustomerFormData } from './components/CustomerForm';
 import TransactionNumpadModal from './components/TransactionNumpadModal';
 import Savings from './components/Savings';
 import SaverForm from './components/SaverForm';
+import ExportImportModal from './components/ExportImportModal';
 import { supabase } from './supabaseClient';
 
 export type Page = 'dashboard' | 'customers' | 'savings';
@@ -97,6 +98,7 @@ const App: React.FC = () => {
   const [transactionMode, setTransactionMode] = useState<TransactionMode>('repayment');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isExportImportOpen, setIsExportImportOpen] = useState(false);
 
   // --- DATA PERSISTENCE & LOADING ---
 
@@ -210,6 +212,11 @@ const App: React.FC = () => {
         // Map server data to App format
         const serverCustomers = (customersDB || []).map(mapCustomerFromDB);
         const serverTransactions = (transactionsDB || []).map(mapTransactionFromDB);
+
+        // DEBUG: Log server data counts
+        const serverSavers = serverCustomers.filter(c => c.role === 'saver');
+        console.log(`📊 DEBUG: Server returned ${serverCustomers.length} customers, ${serverSavers.length} savers`);
+        console.log(`📊 DEBUG: Saver names:`, serverSavers.map(s => s.name));
 
         // FIXED: Always start with SERVER data, then apply sync queue ON TOP
         // This ensures we get data from OTHER devices first
@@ -666,6 +673,17 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Export/Import Button - Fixed position */}
+      <button
+        onClick={() => setIsExportImportOpen(true)}
+        className="fixed top-2 right-2 z-40 bg-white shadow-lg rounded-full p-2 hover:bg-gray-100 transition-colors"
+        title="Export/Import Data"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+      </button>
+
       <main className={`flex-1 p-3 sm:p-6 lg:p-8 ${!isOnline || isSyncing ? 'pt-8' : ''}`}>
         {activePage === 'dashboard' && (
           <Dashboard
@@ -732,6 +750,16 @@ const App: React.FC = () => {
           customHolidays={customHolidays}
         />
       )}
+      <ExportImportModal
+        isOpen={isExportImportOpen}
+        onClose={() => setIsExportImportOpen(false)}
+        customers={customers}
+        transactions={transactions}
+        onImportComplete={() => {
+          // Refresh data after import
+          window.location.reload();
+        }}
+      />
     </div>
   );
 };
