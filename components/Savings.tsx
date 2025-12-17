@@ -60,11 +60,11 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
 
     console.log('[Savings.tsx] BEFORE FILTER:', saverListBeforeFilter.map(s => ({ name: s.customer.name, total: s.totalSavings })));
 
-    const saverList = saverListBeforeFilter.filter(item =>
-      item.totalSavings >= 0 // Show even if 0 balance, but not negative (sanity check)
-    ).sort((a, b) => a.customer.name.localeCompare(b.customer.name));
+    // FIXED: Show ALL savers regardless of balance (even negative)
+    // Negative balance can happen if withdrawals exceed deposits - this is valid data
+    const saverList = saverListBeforeFilter.sort((a, b) => a.customer.name.localeCompare(b.customer.name));
 
-    console.log('[Savings.tsx] saverList after filter:', saverList.length, saverList.map(s => ({ name: s.customer.name, total: s.totalSavings })));
+    console.log('[Savings.tsx] saverList after sort:', saverList.length, saverList.map(s => ({ name: s.customer.name, total: s.totalSavings })));
 
     // Calculate total of displayed savers only
     const total = saverList.reduce((sum, item) => sum + item.totalSavings, 0);
