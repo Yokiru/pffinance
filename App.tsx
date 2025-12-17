@@ -98,6 +98,7 @@ const App: React.FC = () => {
   const [transactionMode, setTransactionMode] = useState<TransactionMode>('repayment');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isExportImportOpen, setIsExportImportOpen] = useState(false);
 
   // --- BROWSER HISTORY MANAGEMENT ---
@@ -394,6 +395,7 @@ const App: React.FC = () => {
     if (!navigator.onLine || isSyncing) return;
 
     let queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+    setPendingSyncCount(queue.length);
     if (queue.length === 0) return;
 
     setIsSyncing(true);
@@ -477,6 +479,16 @@ const App: React.FC = () => {
     // Alert user if there are failed items (potential data loss risk)
     if (failedItems.length > 0) {
       console.error(`⚠️ SYNC WARNING: ${failedItems.length} items failed to sync!`, failedItems);
+    }
+
+    // Update pending count
+    const finalQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
+    setPendingSyncCount(finalQueue.length);
+
+    // If sync was successful, refresh data from server to get latest from all devices
+    if (successfullySyncedQueueIds.size > 0 && finalQueue.length === 0) {
+      console.log('🔄 Refreshing data from server after successful sync...');
+      await fetchData();
     }
 
     setIsSyncing(false);
@@ -736,6 +748,12 @@ const App: React.FC = () => {
       {isSyncing && isOnline && (
         <div className="bg-blue-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
           SINKRONISASI DATA...
+        </div>
+      )}
+      {pendingSyncCount > 0 && !isSyncing && isOnline && (
+        <div className="bg-orange-500 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
+          {pendingSyncCount} item menunggu sinkronisasi - Tap untuk refresh
+          <button onClick={() => processSyncQueue()} className="ml-2 underline">Sync Sekarang</button>
         </div>
       )}
 
