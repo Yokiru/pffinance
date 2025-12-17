@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Customer, Transaction, TransactionType } from './types';
 import Dashboard from './components/Dashboard';
@@ -21,19 +20,14 @@ export interface DateRange {
   end: Date;
 }
 
-// --- OFFLINE SYNC UTILITIES ---
-interface SyncQueueItem {
-  queueId: string; // Unique ID for the queue item itself to prevent duplication issues
-  id: string; // ID of the customer or transaction record
-  action: 'INSERT' | 'UPDATE' | 'DELETE';
-  table: 'customers' | 'transactions';
-  payload: any;
-}
+// --- ONLINE-ONLY ARCHITECTURE ---
+// Data consistency is prioritized over offline capability.
+// All writes are blocking and go directly to Supabase.
+// Local storage is used for caching/faster initial load but not for pending writes.
 
 const STORAGE_KEYS = {
   CUSTOMERS: 'monetto_customers',
   TRANSACTIONS: 'monetto_transactions',
-  SYNC_QUEUE: 'monetto_sync_queue',
   HOLIDAYS: 'monetto_holidays'
 };
 
@@ -97,14 +91,10 @@ const App: React.FC = () => {
   const [transactionTarget, setTransactionTarget] = useState<Customer | null>(null);
   const [transactionMode, setTransactionMode] = useState<TransactionMode>('repayment');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false); // Global blocking loading state
   const [isExportImportOpen, setIsExportImportOpen] = useState(false);
 
   // --- BROWSER HISTORY MANAGEMENT ---
-  // Handle browser back button properly for SPA navigation
-
-  // Custom navigation functions that push to browser history
   const navigateToPage = (page: Page) => {
     if (page !== activePage) {
       window.history.pushState({ page, modal: null }, '', `#${page}`);
@@ -131,38 +121,25 @@ const App: React.FC = () => {
     setTransactionTarget(null);
   };
 
-  // Handle browser back button
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const state = event.state;
-
-      // If no state, we're at the initial page
       if (!state) {
         closeAllModals();
         setActivePage('dashboard');
         return;
       }
-
-      // Close any open modals first
       closeAllModals();
-
-      // Restore page state
       if (state.page) {
         setActivePage(state.page);
       }
-
-      // If state had a modal open, we just closed it by going back
-      // So we don't reopen it - the modal is now closed
     };
-
-    // Set initial state only once on mount
     if (!window.history.state) {
       window.history.replaceState({ page: 'dashboard', modal: null }, '', `#dashboard`);
     }
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []); // Empty dependency array - only run once on mount
+  }, []);
 
   // --- DATA PERSISTENCE & LOADING ---
 
@@ -180,18 +157,15 @@ const App: React.FC = () => {
       return data ? JSON.parse(data) : null;
     } catch (error) {
       console.error(`Error parsing JSON from localStorage key "${key}":`, error);
-      // If parsing fails, remove the corrupted data to prevent future errors
       localStorage.removeItem(key);
       return null;
     }
   };
 
-  // Generate unique ID that won't collide between devices
   const generateUniqueId = (prefix: string) => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return `${prefix}-${crypto.randomUUID()}`;
     }
-    // Fallback for older browsers: timestamp + random + device fingerprint
     const deviceId = localStorage.getItem('device_id') || (() => {
       const id = `DEV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       localStorage.setItem('device_id', id);
@@ -200,74 +174,23 @@ const App: React.FC = () => {
     return `${prefix}-${Date.now()}-${deviceId.slice(-6)}-${Math.random().toString(36).substr(2, 4)}`;
   };
 
-  const addToSyncQueue = (item: Omit<SyncQueueItem, 'queueId'>) => {
-    const queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-    const newItem: SyncQueueItem = {
-      ...item,
-      queueId: generateUniqueId('Q')
-    };
-    // FIXED: Better dedupe - only remove if SAME id AND action, keep order
-    // Also add timestamp to prevent stale queue items
-    const existingIndex = queue.findIndex(q => q.id === newItem.id && q.action === newItem.action);
-    if (existingIndex >= 0) {
-      // Replace existing item with newer one (same position)
-      queue[existingIndex] = newItem;
-    } else {
-      queue.push(newItem);
-    }
-    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, queue);
-    console.log('Item added to sync queue:', newItem);
-  };
-
-  // Helper to merge server data with local offline queue
-  const applySyncQueueToData = (serverData: any[], queue: SyncQueueItem[], table: 'customers' | 'transactions') => {
-    let merged = [...serverData];
-    const tableQueue = queue.filter(q => q.table === table);
-
-    // Sort queue by queueId or implicitly by order to replay actions correctly
-    // Assuming the queue is append-only, the order is already correct.
-
-    tableQueue.forEach(item => {
-      if (item.action === 'INSERT') {
-        // Deduplicate: if ID already exists, remove it first (shouldn't happen on insert but good for safety)
-        merged = merged.filter(d => d.id !== item.payload.id);
-        merged.push(item.payload);
-      } else if (item.action === 'UPDATE') {
-        const index = merged.findIndex(d => d.id === item.payload.id);
-        if (index >= 0) {
-          merged[index] = { ...merged[index], ...item.payload };
-        } else {
-          // If updating an item that isn't in server data (e.g. created offline), append it
-          merged.push(item.payload);
-        }
-      } else if (item.action === 'DELETE') {
-        merged = merged.filter(d => d.id !== item.id);
-      }
-    });
-
-    return merged;
-  };
-
   const fetchData = async () => {
-    // Load Holidays from Local (No Supabase table for holidays yet in this version)
     const localHolidays = loadFromLocal<string[]>(STORAGE_KEYS.HOLIDAYS);
     if (localHolidays) setCustomHolidays(localHolidays);
 
-    // Always load the queue first
-    const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-
-    // Always load local data first as fallback
-    const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS) || [];
-    const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
+    // Initial load from local storage to show something immediately
+    loadDataFromLocal();
 
     if (navigator.onLine) {
       try {
-        console.log("Online: Fetching latest data from Supabase...");
+        console.log("Online: Fetching ALL data from Supabase...");
+
+        // Show loading if we have no data yet
+        if (customers.length === 0) setIsLoading(true);
 
         const { data: customersDB, error: cError } = await supabase.from('customers').select('*');
         if (cError) throw cError;
 
-        // FIXED: Pagination to release 1000 row limit
         let allTransactionsDB: any[] = [];
         let hasMore = true;
         let page = 0;
@@ -284,106 +207,27 @@ const App: React.FC = () => {
 
           if (batch && batch.length > 0) {
             allTransactionsDB = [...allTransactionsDB, ...batch];
-            if (batch.length < pageSize) hasMore = false; // Less than page size means we reached the end
+            if (batch.length < pageSize) hasMore = false;
             else page++;
           } else {
             hasMore = false;
           }
         }
 
-        // Map server data to App format
         const serverCustomers = (customersDB || []).map(mapCustomerFromDB);
         const serverTransactions = (allTransactionsDB || []).map(mapTransactionFromDB);
 
-        // DEBUG: Log server data counts
-        const serverSavers = serverCustomers.filter(c => c.role === 'saver');
-        console.log(`📊 DEBUG: Server returned ${serverCustomers.length} customers, ${serverSavers.length} savers`);
-        console.log(`📊 DEBUG: Saver names:`, serverSavers.map(s => s.name));
+        setCustomers(serverCustomers);
+        setTransactions(serverTransactions);
 
-        // FIXED: Always start with SERVER data, then apply sync queue ON TOP
-        // This ensures we get data from OTHER devices first
-        let mergedCustomers = [...serverCustomers];
-        let mergedTransactions = [...serverTransactions];
+        saveToLocal(STORAGE_KEYS.CUSTOMERS, serverCustomers);
+        saveToLocal(STORAGE_KEYS.TRANSACTIONS, serverTransactions);
 
-        // Apply pending sync queue items (local changes not yet synced)
-        if (syncQueue.length > 0) {
-          console.log(`📦 Applying ${syncQueue.length} pending sync queue items on top of server data...`);
-
-          // Apply customer changes from queue
-          const customerQueueItems = syncQueue.filter(q => q.table === 'customers');
-          for (const item of customerQueueItems) {
-            if (item.action === 'INSERT' || item.action === 'UPDATE') {
-              const existingIndex = mergedCustomers.findIndex(c => c.id === item.payload.id);
-              const customerData = mapCustomerFromDB(item.payload);
-              if (existingIndex >= 0) {
-                mergedCustomers[existingIndex] = customerData;
-              } else {
-                mergedCustomers.push(customerData);
-              }
-            } else if (item.action === 'DELETE') {
-              mergedCustomers = mergedCustomers.filter(c => c.id !== item.id);
-            }
-          }
-
-          // Apply transaction changes from queue
-          const transactionQueueItems = syncQueue.filter(q => q.table === 'transactions');
-          for (const item of transactionQueueItems) {
-            if (item.action === 'INSERT' || item.action === 'UPDATE') {
-              const existingIndex = mergedTransactions.findIndex(t => t.id === item.payload.id);
-              const transactionData = mapTransactionFromDB(item.payload);
-              if (existingIndex >= 0) {
-                mergedTransactions[existingIndex] = transactionData;
-              } else {
-                mergedTransactions.push(transactionData);
-              }
-            } else if (item.action === 'DELETE') {
-              mergedTransactions = mergedTransactions.filter(t => t.id !== item.id);
-            }
-          }
-        }
-
-        // Also check for local-only items not in server AND not in queue (edge case recovery)
-        const mergedCustomerIds = new Set(mergedCustomers.map(c => c.id));
-        const mergedTransactionIds = new Set(mergedTransactions.map(t => t.id));
-        const queueCustomerIds = new Set(syncQueue.filter(q => q.table === 'customers').map(q => q.id));
-        const queueTransactionIds = new Set(syncQueue.filter(q => q.table === 'transactions').map(q => q.id));
-
-        const orphanedLocalCustomers = localCustomers.filter(c =>
-          !mergedCustomerIds.has(c.id) && !queueCustomerIds.has(c.id)
-        );
-        const orphanedLocalTransactions = localTransactions.filter(t =>
-          !mergedTransactionIds.has(t.id) && !queueTransactionIds.has(t.id)
-        );
-
-        if (orphanedLocalCustomers.length > 0 || orphanedLocalTransactions.length > 0) {
-          console.log(`🚨 RECOVERY: Found ${orphanedLocalCustomers.length} orphaned customers and ${orphanedLocalTransactions.length} orphaned transactions. Re-queuing...`);
-
-          for (const customer of orphanedLocalCustomers) {
-            mergedCustomers.push(customer);
-            addToSyncQueue({ id: customer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(customer) });
-          }
-          for (const transaction of orphanedLocalTransactions) {
-            mergedTransactions.push(transaction);
-            addToSyncQueue({ id: transaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(transaction) });
-          }
-        }
-
-        setCustomers(mergedCustomers);
-        setTransactions(mergedTransactions);
-
-        // Save merged data to local storage
-        saveToLocal(STORAGE_KEYS.CUSTOMERS, mergedCustomers);
-        saveToLocal(STORAGE_KEYS.TRANSACTIONS, mergedTransactions);
-
-        console.log("✅ Successfully fetched and merged data.");
-
-        // Trigger sync for any pending items
-        if (syncQueue.length > 0) {
-          setTimeout(processSyncQueue, 500);
-        }
+        console.log(`✅ Fetched ${serverCustomers.length} customers and ${serverTransactions.length} transactions.`);
       } catch (error) {
-        console.error("Failed to fetch from Supabase, using local data.", error);
-        loadDataFromLocal();
+        console.error("Failed to fetch from Supabase.", error);
+      } finally {
+        setIsLoading(false);
       }
     } else {
       console.log("Offline, using local data.");
@@ -394,128 +238,13 @@ const App: React.FC = () => {
   const loadDataFromLocal = () => {
     const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS);
     const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS);
-
-    // We still need to apply the queue to local storage data in case 
-    // the local storage 'CUSTOMERS' key was stale but 'SYNC_QUEUE' had new items
-    const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-
-    if (localCustomers) {
-      // Note: mapCustomerToDB reverse mapping is needed if we want to reuse applySyncQueueToData
-      // But simpler is to assume local storage is "App State" (camelCase) and Queue is "DB State" (snake_case).
-      // To avoid complexity, let's just trust local storage + logic in add/update functions handled state updates.
-      // However, to be robust:
-      setCustomers(localCustomers);
-    }
+    if (localCustomers) setCustomers(localCustomers);
     if (localTransactions) setTransactions(localTransactions);
   }
-
-  const processSyncQueue = async () => {
-    if (!navigator.onLine || isSyncing) return;
-
-    let queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-    setPendingSyncCount(queue.length);
-    if (queue.length === 0) return;
-
-    setIsSyncing(true);
-    console.log(`🔄 SYNC: Processing ${queue.length} offline items...`);
-
-    const successfullySyncedQueueIds = new Set<string>();
-    const failedItems: SyncQueueItem[] = [];
-
-    for (const item of queue) {
-      let error = null;
-      let syncSuccess = false;
-
-      try {
-        console.log(`🔄 SYNC: Processing ${item.action} for ${item.table} - ID: ${item.id}`);
-
-        if (item.table === 'customers') {
-          if (item.action === 'INSERT') {
-            // Use upsert with select to verify data was actually written
-            const { data, error: err } = await supabase.from('customers').upsert([item.payload]).select();
-            error = err;
-            // Verify data was returned (RLS could silently block writes)
-            syncSuccess = !err && data && data.length > 0;
-            if (!syncSuccess && !err) {
-              console.error(`⚠️ RLS BLOCKED: Customer insert returned no data - check Supabase RLS policies!`);
-            }
-          } else if (item.action === 'UPDATE') {
-            const { data, error: err } = await supabase.from('customers').update(item.payload).eq('id', item.payload.id).select();
-            error = err;
-            syncSuccess = !err && data && data.length > 0;
-            if (!syncSuccess && !err) {
-              console.error(`⚠️ RLS BLOCKED: Customer update returned no data!`);
-            }
-          } else if (item.action === 'DELETE') {
-            const { error: err } = await supabase.from('customers').delete().eq('id', item.id);
-            error = err;
-            syncSuccess = !err; // DELETE doesn't return data
-          }
-        } else if (item.table === 'transactions') {
-          if (item.action === 'INSERT') {
-            const { data, error: err } = await supabase.from('transactions').upsert([item.payload]).select();
-            error = err;
-            syncSuccess = !err && data && data.length > 0;
-            if (!syncSuccess && !err) {
-              console.error(`⚠️ RLS BLOCKED: Transaction insert returned no data - check Supabase RLS policies!`);
-            }
-          } else if (item.action === 'UPDATE') {
-            const { data, error: err } = await supabase.from('transactions').update(item.payload).eq('id', item.payload.id).select();
-            error = err;
-            syncSuccess = !err && data && data.length > 0;
-            if (!syncSuccess && !err) {
-              console.error(`⚠️ RLS BLOCKED: Transaction update returned no data!`);
-            }
-          } else if (item.action === 'DELETE') {
-            const { error: err } = await supabase.from('transactions').delete().eq('id', item.id);
-            error = err;
-            syncSuccess = !err;
-          }
-        }
-      } catch (e) {
-        error = e;
-        syncSuccess = false;
-      }
-
-      if (error || !syncSuccess) {
-        console.error(`❌ SYNC FAILED for ${item.table}/${item.id}:`, error || 'No data returned (RLS?)');
-        failedItems.push(item);
-      } else {
-        console.log(`✅ SYNC VERIFIED: ${item.table}/${item.id}`);
-        successfullySyncedQueueIds.add(item.queueId);
-      }
-    }
-
-    if (successfullySyncedQueueIds.size > 0) {
-      // Reload queue from storage to handle any new items added while syncing
-      const currentQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-      const remainingQueue = currentQueue.filter(item => !successfullySyncedQueueIds.has(item.queueId));
-      saveToLocal(STORAGE_KEYS.SYNC_QUEUE, remainingQueue);
-      console.log(`✅ SYNC COMPLETE: ${successfullySyncedQueueIds.size} items synced, ${remainingQueue.length} remaining.`);
-    }
-
-    // Alert user if there are failed items (potential data loss risk)
-    if (failedItems.length > 0) {
-      console.error(`⚠️ SYNC WARNING: ${failedItems.length} items failed to sync!`, failedItems);
-    }
-
-    // Update pending count
-    const finalQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
-    setPendingSyncCount(finalQueue.length);
-
-    // If sync was successful, refresh data from server to get latest from all devices
-    if (successfullySyncedQueueIds.size > 0 && finalQueue.length === 0) {
-      console.log('🔄 Refreshing data from server after successful sync...');
-      await fetchData();
-    }
-
-    setIsSyncing(false);
-  };
 
   useEffect(() => {
     fetchData();
 
-    // FIXED: Realtime Subscription to instant sync across devices
     const channel = supabase.channel('realtime_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
         console.log('⚡ REALTIME CUSTOMER UPDATE:', payload);
@@ -540,65 +269,42 @@ const App: React.FC = () => {
           const newTx = mapTransactionFromDB(payload.new as any);
           setTransactions(prev => {
             const index = prev.findIndex(t => t.id === newTx.id);
-            if (index >= 0) { // If exists, update
-              // Checking if we are editing the same one, maybe skip? But server is truth.
-              // We trust the server for realtime events.
+            if (index >= 0) {
               const newArr = [...prev];
               newArr[index] = newTx;
               return newArr;
             }
-            // If new, prepend because sorted by date desc usually
             return [newTx, ...prev];
           });
-          // Also update local storage to keep it fresh
-          // Note: We can't easily access the latest 'transactions' state inside this callback clojure unless we use functional updates like above.
-          // But to save to local storage we need the whole new array.
-          // We can assume setTransactions triggers a render, and we have a useEffect on transactions? No, we don't have a global useEffect to save transactions on change.
-          // We should save to local inside the setter callback or use a ref.
-          // For simplicity/safety, let's trigger a full lightweight re-fetch or specific update.
-          // Actually, let's keep it simple: Functional update updates the UI.
-          // Persistence to local happens on manual actions usually.
-          // To ensure offline persistence of these incoming changes, we should ideally fetch or save.
-          // But let's trust that next time user opens app, fetchData will get them.
-          // The critical part is UI sync.
         } else if (payload.eventType === 'DELETE') {
           setTransactions(prev => prev.filter(t => t.id !== payload.old.id));
         }
       })
       .subscribe();
 
-    const handleOnline = async () => {
+    const handleOnline = () => {
       console.log("App is online.");
       setIsOnline(true);
-      // CRITICAL FIX: Wait for sync to complete BEFORE fetching new data
-      // This prevents local data from being overwritten before it's synced to server
-      await processSyncQueue();
-      // Only fetch after sync is done
-      await fetchData();
+      fetchData();
     };
     const handleOffline = () => {
       console.log("App is offline.");
-      setIsOnline(false)
+      setIsOnline(false);
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const syncInterval = setInterval(processSyncQueue, 30000);
-    setTimeout(processSyncQueue, 1000);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      clearInterval(syncInterval);
+      supabase.removeChannel(channel);
     };
   }, []);
 
   useEffect(() => {
-    // Save holidays to local storage when they change.
     saveToLocal(STORAGE_KEYS.HOLIDAYS, customHolidays);
   }, [customHolidays]);
-
 
   // --- APP LOGIC ---
 
@@ -617,98 +323,161 @@ const App: React.FC = () => {
     return new Map(customers.map(c => [c.id, c]));
   }, [customers]);
 
-  const addCustomer = (customerData: CustomerFormData) => {
-    const { disbursementMethod, ...data } = customerData;
-    const newCustomer: Customer = {
-      ...data,
-      id: generateUniqueId('CUST'),
-      status: 'aktif',
-      role: 'borrower',
-    };
-    const todayStr = new Date().toISOString().split('T')[0];
-    let transactionDateIso = newCustomer.loanDate === todayStr
-      ? new Date().toISOString()
-      : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
-    const newTransaction: Transaction = {
-      id: generateUniqueId('TRX'),
-      customerId: newCustomer.id,
-      type: TransactionType.LOAN,
-      amount: newCustomer.loanAmount,
-      date: transactionDateIso,
-      description: 'Pinjaman Awal',
-      paymentMethod: disbursementMethod || 'Cash',
-      isEdited: false
-    };
+  // --- BLOCKING CRUD OPERATIONS ---
 
-    const nextCustomers = [...customers, newCustomer];
-    const nextTransactions = [...transactions, newTransaction];
-
-    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
-    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
-    setCustomers(nextCustomers);
-    setTransactions(nextTransactions);
-
-    addToSyncQueue({ id: newCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newCustomer) });
-    addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-
-    setIsCustomerModalOpen(false);
-    setTimeout(processSyncQueue, 100);
-  };
-
-  const addSaver = (data: { name: string; amount: number; date: string }) => {
-    const { name, amount, date } = data;
-    const newSaverAsCustomer: Customer = {
-      id: generateUniqueId('CUST'),
-      name, phone: '', location: 'Luar', loanDate: date,
-      loanAmount: 0, interestRate: 0, installments: 0,
-      status: 'aktif', role: 'saver',
-    };
-    const newTransaction: Transaction = {
-      id: generateUniqueId('TRX'),
-      customerId: newSaverAsCustomer.id,
-      type: TransactionType.SAVINGS, amount,
-      date: new Date(date + 'T09:00:00').toISOString(),
-      description: 'Tabungan awal', paymentMethod: 'Cash',
-    };
-
-    const nextCustomers = [...customers, newSaverAsCustomer];
-    const nextTransactions = [...transactions, newTransaction];
-
-    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
-    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
-    setCustomers(nextCustomers);
-    setTransactions(nextTransactions);
-
-    addToSyncQueue({ id: newSaverAsCustomer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(newSaverAsCustomer) });
-    addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-
-    setIsSaverModalOpen(false);
-    setTimeout(processSyncQueue, 100);
-  };
-
-  const updateCustomer = (updatedCustomer: Customer) => {
-    const nextCustomers = customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c);
-    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
-    setCustomers(nextCustomers);
-
-    addToSyncQueue({ id: updatedCustomer.id, action: 'UPDATE', table: 'customers', payload: mapCustomerToDB(updatedCustomer) });
-    setTimeout(processSyncQueue, 100);
-  };
-
-  const deleteCustomer = (customerId: string) => {
-    const nextCustomers = customers.filter(c => c.id !== customerId);
-    const nextTransactions = transactions.filter(t => t.customerId !== customerId);
-
-    saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
-    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
-    setCustomers(nextCustomers);
-    setTransactions(nextTransactions);
-
-    if (transactionTarget?.id === customerId) {
-      setTransactionTarget(null);
+  const addCustomer = async (customerData: CustomerFormData) => {
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat menambah pelanggan.');
+      return;
     }
-    addToSyncQueue({ id: customerId, action: 'DELETE', table: 'customers', payload: null });
-    setTimeout(processSyncQueue, 100);
+
+    try {
+      setIsLoading(true);
+      const { disbursementMethod, ...data } = customerData;
+      const newCustomer: Customer = {
+        ...data,
+        id: generateUniqueId('CUST'),
+        status: 'aktif',
+        role: 'borrower',
+      };
+      const todayStr = new Date().toISOString().split('T')[0];
+      let transactionDateIso = newCustomer.loanDate === todayStr
+        ? new Date().toISOString()
+        : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
+      const newTransaction: Transaction = {
+        id: generateUniqueId('TRX'),
+        customerId: newCustomer.id,
+        type: TransactionType.LOAN,
+        amount: newCustomer.loanAmount,
+        date: transactionDateIso,
+        description: 'Pinjaman Awal',
+        paymentMethod: disbursementMethod || 'Cash',
+        isEdited: false
+      };
+
+      const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newCustomer)]);
+      if (cError) throw cError;
+
+      const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+      if (tError) throw tError;
+
+      // Optimistic update
+      const nextCustomers = [...customers, newCustomer];
+      const nextTransactions = [...transactions, newTransaction];
+      setCustomers(nextCustomers);
+      setTransactions(nextTransactions);
+      saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+
+      setIsCustomerModalOpen(false);
+      window.history.back();
+    } catch (e: any) {
+      console.error("Add customer error", e);
+      alert('Gagal tambah pelanggan: ' + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const addSaver = async (data: { name: string; amount: number; date: string }) => {
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat menambah penabung.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const { name, amount, date } = data;
+      const newSaverAsCustomer: Customer = {
+        id: generateUniqueId('CUST'),
+        name, phone: '', location: 'Luar', loanDate: date,
+        loanAmount: 0, interestRate: 0, installments: 0,
+        status: 'aktif', role: 'saver',
+      };
+      const newTransaction: Transaction = {
+        id: generateUniqueId('TRX'),
+        customerId: newSaverAsCustomer.id,
+        type: TransactionType.SAVINGS, amount,
+        date: new Date(date + 'T09:00:00').toISOString(),
+        description: 'Tabungan awal', paymentMethod: 'Cash',
+      };
+
+      const { error: cError } = await supabase.from('customers').insert([mapCustomerToDB(newSaverAsCustomer)]);
+      if (cError) throw cError;
+
+      const { error: tError } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+      if (tError) throw tError;
+
+      const nextCustomers = [...customers, newSaverAsCustomer];
+      const nextTransactions = [...transactions, newTransaction];
+      setCustomers(nextCustomers);
+      setTransactions(nextTransactions);
+      saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+
+      setIsSaverModalOpen(false);
+      window.history.back();
+    } catch (e: any) {
+      console.error("Add saver error", e);
+      alert('Gagal tambah penabung: ' + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateCustomer = async (updatedCustomer: Customer) => {
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat update data.');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const { error } = await supabase.from('customers').update(mapCustomerToDB(updatedCustomer)).eq('id', updatedCustomer.id);
+      if (error) throw error;
+
+      const nextCustomers = customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c);
+      setCustomers(nextCustomers);
+      saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+    } catch (e: any) {
+      console.error("Update customer error", e);
+      alert('Gagal update: ' + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteCustomer = async (customerId: string) => {
+    if (!confirm('Yakin ingin menghapus pelanggan ini beserta semua transaksinya?')) return;
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat menghapus data.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const { error: tError } = await supabase.from('transactions').delete().eq('customer_id', customerId);
+      if (tError) throw tError;
+
+      const { error: cError } = await supabase.from('customers').delete().eq('id', customerId);
+      if (cError) throw cError;
+
+      const nextCustomers = customers.filter(c => c.id !== customerId);
+      const nextTransactions = transactions.filter(t => t.customerId !== customerId);
+
+      setCustomers(nextCustomers);
+      setTransactions(nextTransactions);
+      saveToLocal(STORAGE_KEYS.CUSTOMERS, nextCustomers);
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+
+      if (transactionTarget?.id === customerId) {
+        setTransactionTarget(null);
+      }
+    } catch (e: any) {
+      console.error("Delete customer error", e);
+      alert('Gagal hapus: ' + e.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleArchiveToggle = (customerId: string) => {
@@ -720,96 +489,121 @@ const App: React.FC = () => {
     }
   };
 
-  const recalculateCustomerStatus = (customerId: string, allTransactions: Transaction[]) => {
-    // Find customer from the main state, as this function is a utility
-    const customer = customers.find(c => c.id === customerId);
-    if (customer && customer.loanAmount > 0 && customer.status !== 'arsip') {
-      const totalRepayments = allTransactions
-        .filter(t => t.customerId === customer.id && t.type === TransactionType.REPAYMENT)
-        .reduce((sum, t) => sum + t.amount, 0);
+  const recalculateCustomerStatus = async (customerId: string) => {
+    if (!navigator.onLine) return;
 
-      const totalLoanWithInterest = customer.loanAmount * (1 + customer.interestRate / 100);
-      const isPaidOff = totalRepayments >= totalLoanWithInterest;
-      const newStatus: Customer['status'] = isPaidOff ? 'lunas' : 'aktif';
+    try {
+      const { data: serverTx, error } = await supabase.from('transactions').select('*').eq('customer_id', customerId);
 
-      if (customer.status !== newStatus) {
-        const updatedCustomer: Customer = { ...customer, status: newStatus };
-        // This will trigger its own save and sync
-        updateCustomer(updatedCustomer);
+      if (!error && serverTx) {
+        const freshTransactions = serverTx.map(mapTransactionFromDB);
+        const customer = customers.find(c => c.id === customerId);
+
+        if (customer && customer.loanAmount > 0 && customer.status !== 'arsip') {
+          const totalRepayments = freshTransactions
+            .filter(t => t.type === TransactionType.REPAYMENT)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+          const totalLoanWithInterest = customer.loanAmount * (1 + customer.interestRate / 100);
+          const isPaidOff = totalRepayments >= totalLoanWithInterest;
+          const newStatus: Customer['status'] = isPaidOff ? 'lunas' : 'aktif';
+
+          if (customer.status !== newStatus) {
+            const updatedCustomer = { ...customer, status: newStatus };
+            await supabase.from('customers').update({ status: newStatus }).eq('id', customerId);
+            setCustomers(prev => prev.map(c => c.id === customerId ? updatedCustomer : c));
+          }
+        }
       }
+    } catch (e) {
+      console.error("Recalculate error:", e);
     }
   };
 
   const handleCreateTransactionFromNumpad = async (transactionData: Omit<Transaction, 'id'>) => {
-    const newTransaction: Transaction = {
-      ...transactionData,
-      id: generateUniqueId('TRX'),
-    };
-
-    const nextTransactions = [...transactions, newTransaction];
-    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
-    setTransactions(nextTransactions);
-
-    // Try immediate sync if online
-    if (navigator.onLine) {
-      try {
-        console.log('📤 Direct sync: Inserting transaction to Supabase...');
-        const { data, error } = await supabase
-          .from('transactions')
-          .insert([mapTransactionToDB(newTransaction)])
-          .select();
-
-        if (error) {
-          console.error('❌ Direct sync failed:', error);
-          // Fall back to queue
-          addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-        } else if (data && data.length > 0) {
-          console.log('✅ Direct sync SUCCESS:', data[0].id);
-        } else {
-          console.error('⚠️ Direct sync returned no data (RLS issue?)');
-          addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-        }
-      } catch (e) {
-        console.error('❌ Direct sync exception:', e);
-        addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
-      }
-    } else {
-      // Offline - use queue
-      addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat transaksi.');
+      return;
     }
 
-    setTransactionTarget(null);
+    try {
+      setIsLoading(true);
+      const newTransaction: Transaction = {
+        ...transactionData,
+        id: generateUniqueId('TRX'),
+      };
 
-    if (transactionData.type === TransactionType.REPAYMENT) {
-      recalculateCustomerStatus(transactionData.customerId, nextTransactions);
-    }
-  };
+      const { error } = await supabase.from('transactions').insert([mapTransactionToDB(newTransaction)]);
+      if (error) throw error;
 
-  const updateTransaction = (updatedTransaction: Transaction) => {
-    const transactionToSave = { ...updatedTransaction, isEdited: true };
-    const nextTransactions = transactions.map(t => t.id === updatedTransaction.id ? transactionToSave : t);
-
-    saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
-    setTransactions(nextTransactions);
-
-    addToSyncQueue({ id: transactionToSave.id, action: 'UPDATE', table: 'transactions', payload: mapTransactionToDB(transactionToSave) });
-    setTimeout(processSyncQueue, 100);
-
-    recalculateCustomerStatus(updatedTransaction.customerId, nextTransactions);
-  };
-
-  const deleteTransaction = (transactionId: string) => {
-    const transactionToDelete = transactions.find(t => t.id === transactionId);
-    if (transactionToDelete) {
-      const nextTransactions = transactions.filter(t => t.id !== transactionId);
-
-      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+      const nextTransactions = [...transactions, newTransaction];
       setTransactions(nextTransactions);
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
 
-      addToSyncQueue({ id: transactionId, action: 'DELETE', table: 'transactions', payload: null });
-      setTimeout(processSyncQueue, 100);
+      setTransactionTarget(null);
 
-      recalculateCustomerStatus(transactionToDelete.customerId, nextTransactions);
+      if (transactionData.type === TransactionType.REPAYMENT) {
+        await recalculateCustomerStatus(transactionData.customerId);
+      }
+
+    } catch (e: any) {
+      console.error("Create transaction error", e);
+      alert('Transaksi Gagal: ' + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateTransaction = async (updatedTransaction: Transaction) => {
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat update.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const transactionToSave = { ...updatedTransaction, isEdited: true };
+      const { error } = await supabase.from('transactions').update(mapTransactionToDB(transactionToSave)).eq('id', transactionToSave.id);
+      if (error) throw error;
+
+      const nextTransactions = transactions.map(t => t.id === updatedTransaction.id ? transactionToSave : t);
+      setTransactions(nextTransactions);
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+
+      await recalculateCustomerStatus(updatedTransaction.customerId);
+    } catch (e: any) {
+      console.error("Update transaction error", e);
+      alert('Gagal update transaksi: ' + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteTransaction = async (transactionId: string) => {
+    const transactionToDelete = transactions.find(t => t.id === transactionId);
+    if (!transactionToDelete) return;
+    if (!confirm('Hapus transaksi ini?')) return;
+
+    if (!navigator.onLine) {
+      alert('Mode Offline: Tidak dapat hapus.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const { error } = await supabase.from('transactions').delete().eq('id', transactionId);
+      if (error) throw error;
+
+      const nextTransactions = transactions.filter(t => t.id !== transactionId);
+      setTransactions(nextTransactions);
+      saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
+
+      await recalculateCustomerStatus(transactionToDelete.customerId);
+    } catch (e: any) {
+      console.error("Delete transaction error", e);
+      alert('Gagal hapus transaksi: ' + e.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -834,21 +628,14 @@ const App: React.FC = () => {
 
   return (
     <div className="font-sans min-h-screen text-gray-900 pb-28">
-      {/* Offline Indicator */}
-      {!isOnline && (
-        <div className="bg-red-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
-          OFFLINE MODE - Data disimpan secara lokal
-        </div>
-      )}
-      {isSyncing && isOnline && (
-        <div className="bg-blue-600 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
-          SINKRONISASI DATA...
-        </div>
-      )}
-      {pendingSyncCount > 0 && !isSyncing && isOnline && (
-        <div className="bg-orange-500 text-white text-xs font-bold text-center py-1 px-4 fixed top-0 left-0 right-0 z-50">
-          {pendingSyncCount} item menunggu sinkronisasi - Tap untuk refresh
-          <button onClick={() => processSyncQueue()} className="ml-2 underline">Sync Sekarang</button>
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-[60] bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-5 rounded-lg shadow-xl flex flex-col items-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-3"></div>
+            <p className="font-bold text-gray-700">Memproses Data...</p>
+            <p className="text-xs text-gray-500 mt-1">Mohon tunggu sebentar</p>
+          </div>
         </div>
       )}
 
@@ -866,7 +653,7 @@ const App: React.FC = () => {
         </svg>
       </button>
 
-      <main className={`flex-1 p-3 sm:p-6 lg:p-8 ${!isOnline || isSyncing ? 'pt-8' : ''}`}>
+      <main className={`flex-1 p-3 sm:p-6 lg:p-8 ${!isOnline ? 'pt-8' : ''}`}>
         {activePage === 'dashboard' && (
           <Dashboard
             customers={customers}
