@@ -670,7 +670,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCreateTransactionFromNumpad = (transactionData: Omit<Transaction, 'id'>) => {
+  const handleCreateTransactionFromNumpad = async (transactionData: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = {
       ...transactionData,
       id: generateUniqueId('TRX'),
@@ -680,10 +680,35 @@ const App: React.FC = () => {
     saveToLocal(STORAGE_KEYS.TRANSACTIONS, nextTransactions);
     setTransactions(nextTransactions);
 
-    addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+    // Try immediate sync if online
+    if (navigator.onLine) {
+      try {
+        console.log('📤 Direct sync: Inserting transaction to Supabase...');
+        const { data, error } = await supabase
+          .from('transactions')
+          .insert([mapTransactionToDB(newTransaction)])
+          .select();
+
+        if (error) {
+          console.error('❌ Direct sync failed:', error);
+          // Fall back to queue
+          addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+        } else if (data && data.length > 0) {
+          console.log('✅ Direct sync SUCCESS:', data[0].id);
+        } else {
+          console.error('⚠️ Direct sync returned no data (RLS issue?)');
+          addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+        }
+      } catch (e) {
+        console.error('❌ Direct sync exception:', e);
+        addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+      }
+    } else {
+      // Offline - use queue
+      addToSyncQueue({ id: newTransaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(newTransaction) });
+    }
 
     setTransactionTarget(null);
-    setTimeout(processSyncQueue, 100);
 
     if (transactionData.type === TransactionType.REPAYMENT) {
       recalculateCustomerStatus(transactionData.customerId, nextTransactions);
