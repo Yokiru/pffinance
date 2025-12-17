@@ -154,14 +154,14 @@ const App: React.FC = () => {
       // So we don't reopen it - the modal is now closed
     };
 
-    // Set initial state if not set
+    // Set initial state only once on mount
     if (!window.history.state) {
-      window.history.replaceState({ page: activePage, modal: null }, '', `#${activePage}`);
+      window.history.replaceState({ page: 'dashboard', modal: null }, '', `#dashboard`);
     }
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activePage]);
+  }, []); // Empty dependency array - only run once on mount
 
   // --- DATA PERSISTENCE & LOADING ---
 
