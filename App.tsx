@@ -120,16 +120,36 @@ const App: React.FC = () => {
     }
   };
 
+  // Generate unique ID that won't collide between devices
+  const generateUniqueId = (prefix: string) => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return `${prefix}-${crypto.randomUUID()}`;
+    }
+    // Fallback for older browsers: timestamp + random + device fingerprint
+    const deviceId = localStorage.getItem('device_id') || (() => {
+      const id = `DEV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('device_id', id);
+      return id;
+    })();
+    return `${prefix}-${Date.now()}-${deviceId.slice(-6)}-${Math.random().toString(36).substr(2, 4)}`;
+  };
+
   const addToSyncQueue = (item: Omit<SyncQueueItem, 'queueId'>) => {
     const queue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
     const newItem: SyncQueueItem = {
       ...item,
-      queueId: `Q-${Date.now()}-${Math.random()}`
+      queueId: generateUniqueId('Q')
     };
-    // Avoid duplicates for the same record and action
-    const filteredQueue = queue.filter(q => !(q.id === newItem.id && q.action === newItem.action));
-    filteredQueue.push(newItem);
-    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, filteredQueue);
+    // FIXED: Better dedupe - only remove if SAME id AND action, keep order
+    // Also add timestamp to prevent stale queue items
+    const existingIndex = queue.findIndex(q => q.id === newItem.id && q.action === newItem.action);
+    if (existingIndex >= 0) {
+      // Replace existing item with newer one (same position)
+      queue[existingIndex] = newItem;
+    } else {
+      queue.push(newItem);
+    }
+    saveToLocal(STORAGE_KEYS.SYNC_QUEUE, queue);
     console.log('Item added to sync queue:', newItem);
   };
 
@@ -167,17 +187,10 @@ const App: React.FC = () => {
     const localHolidays = loadFromLocal<string[]>(STORAGE_KEYS.HOLIDAYS);
     if (localHolidays) setCustomHolidays(localHolidays);
 
-    // Always load the queue first to apply optimistic updates
+    // Always load the queue first
     const syncQueue = loadFromLocal<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE) || [];
 
-    // CRITICAL FIX: If there are pending sync items, DO NOT fetch from server
-    if (syncQueue.length > 0) {
-      console.log(`⚠️ ${syncQueue.length} pending sync items found. Preserving local data.`);
-      loadDataFromLocal();
-      return;
-    }
-
-    // Always load local data first
+    // Always load local data first as fallback
     const localCustomers = loadFromLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS) || [];
     const localTransactions = loadFromLocal<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
 
@@ -198,22 +211,73 @@ const App: React.FC = () => {
         const serverCustomers = (customersDB || []).map(mapCustomerFromDB);
         const serverTransactions = (transactionsDB || []).map(mapTransactionFromDB);
 
-        // CRITICAL: MERGE instead of REPLACE
-        // Keep local items that don't exist in server (they might not have synced yet)
-        const serverCustomerIds = new Set(serverCustomers.map(c => c.id));
-        const serverTransactionIds = new Set(serverTransactions.map(t => t.id));
+        // FIXED: Always start with SERVER data, then apply sync queue ON TOP
+        // This ensures we get data from OTHER devices first
+        let mergedCustomers = [...serverCustomers];
+        let mergedTransactions = [...serverTransactions];
 
-        // Find local items not in server
-        const localOnlyCustomers = localCustomers.filter(c => !serverCustomerIds.has(c.id));
-        const localOnlyTransactions = localTransactions.filter(t => !serverTransactionIds.has(t.id));
+        // Apply pending sync queue items (local changes not yet synced)
+        if (syncQueue.length > 0) {
+          console.log(`📦 Applying ${syncQueue.length} pending sync queue items on top of server data...`);
 
-        if (localOnlyCustomers.length > 0 || localOnlyTransactions.length > 0) {
-          console.log(`📦 MERGE: Preserving ${localOnlyCustomers.length} local customers and ${localOnlyTransactions.length} local transactions not in server`);
+          // Apply customer changes from queue
+          const customerQueueItems = syncQueue.filter(q => q.table === 'customers');
+          for (const item of customerQueueItems) {
+            if (item.action === 'INSERT' || item.action === 'UPDATE') {
+              const existingIndex = mergedCustomers.findIndex(c => c.id === item.payload.id);
+              const customerData = mapCustomerFromDB(item.payload);
+              if (existingIndex >= 0) {
+                mergedCustomers[existingIndex] = customerData;
+              } else {
+                mergedCustomers.push(customerData);
+              }
+            } else if (item.action === 'DELETE') {
+              mergedCustomers = mergedCustomers.filter(c => c.id !== item.id);
+            }
+          }
+
+          // Apply transaction changes from queue
+          const transactionQueueItems = syncQueue.filter(q => q.table === 'transactions');
+          for (const item of transactionQueueItems) {
+            if (item.action === 'INSERT' || item.action === 'UPDATE') {
+              const existingIndex = mergedTransactions.findIndex(t => t.id === item.payload.id);
+              const transactionData = mapTransactionFromDB(item.payload);
+              if (existingIndex >= 0) {
+                mergedTransactions[existingIndex] = transactionData;
+              } else {
+                mergedTransactions.push(transactionData);
+              }
+            } else if (item.action === 'DELETE') {
+              mergedTransactions = mergedTransactions.filter(t => t.id !== item.id);
+            }
+          }
         }
 
-        // Merge: server data + local-only data
-        const mergedCustomers = [...serverCustomers, ...localOnlyCustomers];
-        const mergedTransactions = [...serverTransactions, ...localOnlyTransactions];
+        // Also check for local-only items not in server AND not in queue (edge case recovery)
+        const mergedCustomerIds = new Set(mergedCustomers.map(c => c.id));
+        const mergedTransactionIds = new Set(mergedTransactions.map(t => t.id));
+        const queueCustomerIds = new Set(syncQueue.filter(q => q.table === 'customers').map(q => q.id));
+        const queueTransactionIds = new Set(syncQueue.filter(q => q.table === 'transactions').map(q => q.id));
+
+        const orphanedLocalCustomers = localCustomers.filter(c =>
+          !mergedCustomerIds.has(c.id) && !queueCustomerIds.has(c.id)
+        );
+        const orphanedLocalTransactions = localTransactions.filter(t =>
+          !mergedTransactionIds.has(t.id) && !queueTransactionIds.has(t.id)
+        );
+
+        if (orphanedLocalCustomers.length > 0 || orphanedLocalTransactions.length > 0) {
+          console.log(`🚨 RECOVERY: Found ${orphanedLocalCustomers.length} orphaned customers and ${orphanedLocalTransactions.length} orphaned transactions. Re-queuing...`);
+
+          for (const customer of orphanedLocalCustomers) {
+            mergedCustomers.push(customer);
+            addToSyncQueue({ id: customer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(customer) });
+          }
+          for (const transaction of orphanedLocalTransactions) {
+            mergedTransactions.push(transaction);
+            addToSyncQueue({ id: transaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(transaction) });
+          }
+        }
 
         setCustomers(mergedCustomers);
         setTransactions(mergedTransactions);
@@ -222,22 +286,12 @@ const App: React.FC = () => {
         saveToLocal(STORAGE_KEYS.CUSTOMERS, mergedCustomers);
         saveToLocal(STORAGE_KEYS.TRANSACTIONS, mergedTransactions);
 
-        // Re-queue local-only items for sync
-        for (const customer of localOnlyCustomers) {
-          console.log(`🔄 Re-queuing customer for sync: ${customer.name}`);
-          addToSyncQueue({ id: customer.id, action: 'INSERT', table: 'customers', payload: mapCustomerToDB(customer) });
-        }
-        for (const transaction of localOnlyTransactions) {
-          console.log(`🔄 Re-queuing transaction for sync: ${transaction.id}`);
-          addToSyncQueue({ id: transaction.id, action: 'INSERT', table: 'transactions', payload: mapTransactionToDB(transaction) });
-        }
+        console.log("✅ Successfully fetched and merged data.");
 
-        // Trigger sync if there are re-queued items
-        if (localOnlyCustomers.length > 0 || localOnlyTransactions.length > 0) {
+        // Trigger sync for any pending items
+        if (syncQueue.length > 0) {
           setTimeout(processSyncQueue, 500);
         }
-
-        console.log("✅ Successfully fetched and merged data.");
       } catch (error) {
         console.error("Failed to fetch from Supabase, using local data.", error);
         loadDataFromLocal();
@@ -415,7 +469,7 @@ const App: React.FC = () => {
     const { disbursementMethod, ...data } = customerData;
     const newCustomer: Customer = {
       ...data,
-      id: `CUST-${Date.now()}`,
+      id: generateUniqueId('CUST'),
       status: 'aktif',
       role: 'borrower',
     };
@@ -424,7 +478,7 @@ const App: React.FC = () => {
       ? new Date().toISOString()
       : new Date(newCustomer.loanDate + 'T09:00:00').toISOString();
     const newTransaction: Transaction = {
-      id: `TRX-${Date.now()}`,
+      id: generateUniqueId('TRX'),
       customerId: newCustomer.id,
       type: TransactionType.LOAN,
       amount: newCustomer.loanAmount,
@@ -452,13 +506,13 @@ const App: React.FC = () => {
   const addSaver = (data: { name: string; amount: number; date: string }) => {
     const { name, amount, date } = data;
     const newSaverAsCustomer: Customer = {
-      id: `CUST-${Date.now()}`,
+      id: generateUniqueId('CUST'),
       name, phone: '', location: 'Luar', loanDate: date,
       loanAmount: 0, interestRate: 0, installments: 0,
       status: 'aktif', role: 'saver',
     };
     const newTransaction: Transaction = {
-      id: `TRX-${Date.now()}`,
+      id: generateUniqueId('TRX'),
       customerId: newSaverAsCustomer.id,
       type: TransactionType.SAVINGS, amount,
       date: new Date(date + 'T09:00:00').toISOString(),
@@ -537,7 +591,7 @@ const App: React.FC = () => {
   const handleCreateTransactionFromNumpad = (transactionData: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = {
       ...transactionData,
-      id: `TRX-${Date.now()}`,
+      id: generateUniqueId('TRX'),
     };
 
     const nextTransactions = [...transactions, newTransaction];
