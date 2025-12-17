@@ -13,46 +13,49 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
   const { totalSavings, savers } = useMemo(() => {
     const savingsByCustomer = new Map<string, number>();
     const savedTodayByCustomer = new Map<string, number>();
-    
+
     // Helper to ensure accurate local date comparison (YYYY-MM-DD)
     const toLocalYMD = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     };
-    
+
     const todayStr = toLocalYMD(new Date());
     const checkIsToday = (dateStr: string) => {
-        return toLocalYMD(new Date(dateStr)) === todayStr;
+      return toLocalYMD(new Date(dateStr)) === todayStr;
     };
 
     // Calculate balance based on transactions
     transactions.forEach(t => {
-        const currentBalance = savingsByCustomer.get(t.customerId) || 0;
-        if (t.type === TransactionType.SAVINGS) {
-            savingsByCustomer.set(t.customerId, currentBalance + t.amount);
-            
-            if (checkIsToday(t.date)) {
-                savedTodayByCustomer.set(t.customerId, (savedTodayByCustomer.get(t.customerId) || 0) + t.amount);
-            }
-        } else if (t.type === TransactionType.WITHDRAWAL) {
-            savingsByCustomer.set(t.customerId, currentBalance - t.amount);
+      const currentBalance = savingsByCustomer.get(t.customerId) || 0;
+      if (t.type === TransactionType.SAVINGS) {
+        savingsByCustomer.set(t.customerId, currentBalance + t.amount);
+
+        if (checkIsToday(t.date)) {
+          savedTodayByCustomer.set(t.customerId, (savedTodayByCustomer.get(t.customerId) || 0) + t.amount);
         }
+      } else if (t.type === TransactionType.WITHDRAWAL) {
+        savingsByCustomer.set(t.customerId, currentBalance - t.amount);
+      }
     });
 
-    // Create list but ONLY include customers who are explicitly 'savers' or have specific saving activity
-    const saverList = Array.from(savingsByCustomer.entries()).map(([customerId, totalAmount]) => {
-        return {
-            customer: customerMap.get(customerId)!,
-            totalSavings: totalAmount,
-            amountSavedToday: savedTodayByCustomer.get(customerId) || 0
-        };
-    }).filter(item => 
-        item.customer && 
-        item.customer.role === 'saver' && // Only show explicit savers
-        item.totalSavings >= 0 // Show even if 0 balance, but not negative (sanity check)
-    ).sort((a, b) => a.customer.name.localeCompare(b.customer.name)); 
+    // FIXED: Get ALL savers from customerMap, not just those with transactions
+    // This ensures savers with 0 transactions still appear in the list
+    const allSavers = (Array.from(customerMap.values()) as Customer[]).filter(c => c.role === 'saver');
+
+    const saverList = allSavers.map(customer => {
+      const totalSavings = savingsByCustomer.get(customer.id) || 0;
+      const amountSavedToday = savedTodayByCustomer.get(customer.id) || 0;
+      return {
+        customer,
+        totalSavings,
+        amountSavedToday
+      };
+    }).filter(item =>
+      item.totalSavings >= 0 // Show even if 0 balance, but not negative (sanity check)
+    ).sort((a, b) => a.customer.name.localeCompare(b.customer.name));
 
     // Calculate total of displayed savers only
     const total = saverList.reduce((sum, item) => sum + item.totalSavings, 0);
@@ -82,26 +85,26 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
                 <p className="font-bold text-base text-gray-900 truncate">{saver.customer.name}</p>
                 <p className="text-xs font-medium text-gray-500">{saver.customer.location}</p>
                 {saver.customer.phone && (
-                     <p className="text-xs font-medium text-gray-400">{saver.customer.phone}</p>
+                  <p className="text-xs font-medium text-gray-400">{saver.customer.phone}</p>
                 )}
               </div>
               <div className="text-right flex flex-col items-end">
                 <p className="font-normal text-lg text-gray-900">{formatCurrency(saver.totalSavings)}</p>
                 {saver.amountSavedToday > 0 && (
-                    <p className="text-xs font-bold text-green-600 mt-0.5">
-                        + {formatCurrency(saver.amountSavedToday)}
-                    </p>
+                  <p className="text-xs font-bold text-green-600 mt-0.5">
+                    + {formatCurrency(saver.amountSavedToday)}
+                  </p>
                 )}
               </div>
             </button>
           ))
         ) : (
           <div className="bg-card shadow-sm border border-gray-100 rounded-2xl p-6 text-center text-gray-400 flex flex-col items-center justify-center space-y-4 min-h-[150px]">
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5v9a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 16.5v-9A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5h4.5a1.5 1.5 0 011.5 1.5v.75a1.5 1.5 0 01-1.5 1.5H15V10.5z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12a.75.75 0 110 1.5.75.75 0 010-1.5z" />
-             </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5v9a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 16.5v-9A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5h4.5a1.5 1.5 0 011.5 1.5v.75a1.5 1.5 0 01-1.5 1.5H15V10.5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12a.75.75 0 110 1.5.75.75 0 010-1.5z" />
+            </svg>
             <p>Belum ada penabung.</p>
           </div>
         )}
