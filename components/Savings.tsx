@@ -45,7 +45,10 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
     // This ensures savers with 0 transactions still appear in the list
     const allSavers = (Array.from(customerMap.values()) as Customer[]).filter(c => c.role === 'saver');
 
-    const saverList = allSavers.map(customer => {
+    console.log('[Savings.tsx] customerMap size:', customerMap.size);
+    console.log('[Savings.tsx] allSavers found:', allSavers.length, allSavers.map(s => s.name));
+
+    const saverListBeforeFilter = allSavers.map(customer => {
       const totalSavings = savingsByCustomer.get(customer.id) || 0;
       const amountSavedToday = savedTodayByCustomer.get(customer.id) || 0;
       return {
@@ -53,9 +56,15 @@ const Savings: React.FC<SavingsProps> = ({ transactions, customerMap, onSaverSel
         totalSavings,
         amountSavedToday
       };
-    }).filter(item =>
+    });
+
+    console.log('[Savings.tsx] BEFORE FILTER:', saverListBeforeFilter.map(s => ({ name: s.customer.name, total: s.totalSavings })));
+
+    const saverList = saverListBeforeFilter.filter(item =>
       item.totalSavings >= 0 // Show even if 0 balance, but not negative (sanity check)
     ).sort((a, b) => a.customer.name.localeCompare(b.customer.name));
+
+    console.log('[Savings.tsx] saverList after filter:', saverList.length, saverList.map(s => ({ name: s.customer.name, total: s.totalSavings })));
 
     // Calculate total of displayed savers only
     const total = saverList.reduce((sum, item) => sum + item.totalSavings, 0);
