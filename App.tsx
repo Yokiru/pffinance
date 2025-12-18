@@ -170,6 +170,51 @@ const App: React.FC = () => {
     return `${prefix}-${Date.now()}-${deviceId.slice(-6)}-${Math.random().toString(36).substr(2, 4)}`;
   };
 
+  // --- REALTIME SYNC SAFETY ---
+  const isInitialLoad = React.useRef(true);
+  const pendingRealtimeEvents = React.useRef<{ type: 'INSERT' | 'UPDATE' | 'DELETE', table: 'customers' | 'transactions', payload: any }[]>([]);
+
+  const processPendingRealtimeEvents = () => {
+    if (pendingRealtimeEvents.current.length > 0) {
+      console.log(`⚡ Processing ${pendingRealtimeEvents.current.length} buffered realtime events...`);
+
+      pendingRealtimeEvents.current.forEach(event => {
+        if (event.table === 'customers') {
+          if (event.type === 'INSERT' || event.type === 'UPDATE') {
+            const newCustomer = mapCustomerFromDB(event.payload);
+            setCustomers(prev => {
+              const index = prev.findIndex(c => c.id === newCustomer.id);
+              if (index >= 0) {
+                const newArr = [...prev];
+                newArr[index] = newCustomer;
+                return newArr;
+              }
+              return [...prev, newCustomer];
+            });
+          } else if (event.type === 'DELETE') {
+            setCustomers(prev => prev.filter(c => c.id !== event.payload.id));
+          }
+        } else if (event.table === 'transactions') {
+          if (event.type === 'INSERT' || event.type === 'UPDATE') {
+            const newTx = mapTransactionFromDB(event.payload);
+            setTransactions(prev => {
+              const index = prev.findIndex(t => t.id === newTx.id);
+              if (index >= 0) {
+                const newArr = [...prev];
+                newArr[index] = newTx;
+                return newArr;
+              }
+              return [newTx, ...prev];
+            });
+          } else if (event.type === 'DELETE') {
+            setTransactions(prev => prev.filter(t => t.id !== event.payload.id));
+          }
+        }
+      });
+      pendingRealtimeEvents.current = [];
+    }
+  };
+
   const fetchData = async () => {
     const localHolidays = loadFromLocal<string[]>(STORAGE_KEYS.HOLIDAYS);
     if (localHolidays) setCustomHolidays(localHolidays);
@@ -213,13 +258,20 @@ const App: React.FC = () => {
         const serverCustomers = (customersDB || []).map(mapCustomerFromDB);
         const serverTransactions = (allTransactionsDB || []).map(mapTransactionFromDB);
 
+        // Update state with Server Data (Source of Truth)
         setCustomers(serverCustomers);
         setTransactions(serverTransactions);
 
+        // Save fresh data to local storage for next time
         saveToLocal(STORAGE_KEYS.CUSTOMERS, serverCustomers);
         saveToLocal(STORAGE_KEYS.TRANSACTIONS, serverTransactions);
 
         console.log(`✅ Fetched ${serverCustomers.length} customers and ${serverTransactions.length} transactions.`);
+
+        // Mark initial load as done and process any buffered events
+        isInitialLoad.current = false;
+        processPendingRealtimeEvents();
+
       } catch (error) {
         console.error("Failed to fetch from Supabase.", error);
       } finally {
@@ -228,6 +280,7 @@ const App: React.FC = () => {
     } else {
       console.log("Offline, using local data.");
       loadDataFromLocal();
+      isInitialLoad.current = false;
     }
   };
 
@@ -243,6 +296,12 @@ const App: React.FC = () => {
 
     const channel = supabase.channel('realtime_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+        if (isInitialLoad.current) {
+          console.log('buffered customer event', payload);
+          pendingRealtimeEvents.current.push({ type: payload.eventType as any, table: 'customers', payload: payload.eventType === 'DELETE' ? payload.old : payload.new });
+          return;
+        }
+
         console.log('⚡ REALTIME CUSTOMER UPDATE:', payload);
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const newCustomer = mapCustomerFromDB(payload.new as any);
@@ -260,6 +319,12 @@ const App: React.FC = () => {
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
+        if (isInitialLoad.current) {
+          console.log('buffered transaction event', payload);
+          pendingRealtimeEvents.current.push({ type: payload.eventType as any, table: 'transactions', payload: payload.eventType === 'DELETE' ? payload.old : payload.new });
+          return;
+        }
+
         console.log('⚡ REALTIME TRANSACTION UPDATE:', payload);
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const newTx = mapTransactionFromDB(payload.new as any);
