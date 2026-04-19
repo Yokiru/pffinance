@@ -10,6 +10,7 @@ import TransactionNumpadModal from './components/TransactionNumpadModal';
 import Savings from './components/Savings';
 import SaverForm from './components/SaverForm';
 import { supabase } from './supabaseClient';
+import PublicProfileStatusPage from './components/PublicProfileStatusPage';
 
 export type Page = 'dashboard' | 'customers' | 'savings';
 type TransactionMode = 'repayment' | 'savings' | 'withdrawal';
@@ -79,7 +80,28 @@ const mapTransactionToDB = (t: Transaction) => ({
   is_edited: t.isEdited || false,
 });
 
+const getPublicStatusTokenFromLocation = () => {
+  const { pathname, search, hash } = window.location;
+
+  const pathMatch = pathname.match(/\/status\/([^/]+)/i);
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+
+  const params = new URLSearchParams(search);
+  const searchToken = params.get('status');
+  if (searchToken) return searchToken;
+
+  const hashMatch = hash.match(/#\/status\/([^/]+)/i);
+  if (hashMatch?.[1]) return decodeURIComponent(hashMatch[1]);
+
+  return null;
+};
+
 const App: React.FC = () => {
+  const publicStatusToken = getPublicStatusTokenFromLocation();
+  if (publicStatusToken) {
+    return <PublicProfileStatusPage shareToken={publicStatusToken} />;
+  }
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customHolidays, setCustomHolidays] = useState<string[]>([]);
