@@ -247,50 +247,84 @@ const countDueByToday = (dueDates: Date[]) => {
     .length;
 };
 
+const findSlotIndexForRepayment = (dueDates: Date[], paymentDate: Date) => {
+  if (!dueDates.length) return -1;
+
+  const paymentDay = startOfDay(paymentDate).getTime();
+
+  if (paymentDay <= startOfDay(dueDates[0]).getTime()) {
+    return 0;
+  }
+
+  for (let index = 0; index < dueDates.length; index += 1) {
+    const currentDue = startOfDay(dueDates[index]).getTime();
+    const nextDue =
+      index + 1 < dueDates.length
+        ? startOfDay(dueDates[index + 1]).getTime()
+        : Number.POSITIVE_INFINITY;
+
+    if (paymentDay >= currentDue && paymentDay < nextDue) {
+      return index;
+    }
+  }
+
+  return dueDates.length - 1;
+};
+
 const buildInstallmentSlots = (
   loan: PublicLoan,
   repayments: PublicRepayment[]
 ) => {
   const dueDates = generateDueDates(loan);
-  const repaymentAmounts = [...repayments]
+  const repaymentItems = [...repayments]
     .filter((repayment) => repayment.loanId === loan.loanId)
     .sort(
       (a, b) =>
         new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
     );
-  const paidInstallments = Math.max(
-    0,
-    Math.min(
-      loan.installments,
-      Math.floor(
-        (loan.totalRepaidAmount || 0) /
-          Math.max(loan.installmentAmount || 1, 1)
-      )
-    )
-  );
-  const dueByToday = countDueByToday(dueDates);
+  const paidSlotMap = new Map<
+    number,
+    { amount: number; transactionDate: string }
+  >();
+
+  repaymentItems.forEach((repayment) => {
+    const baseIndex = findSlotIndexForRepayment(
+      dueDates,
+      new Date(repayment.transactionDate)
+    );
+
+    if (baseIndex < 0) return;
+
+    let targetIndex = baseIndex;
+    while (paidSlotMap.has(targetIndex) && targetIndex < dueDates.length - 1) {
+      targetIndex += 1;
+    }
+
+    if (!paidSlotMap.has(targetIndex)) {
+      paidSlotMap.set(targetIndex, {
+        amount: repayment.amount,
+        transactionDate: repayment.transactionDate,
+      });
+    }
+  });
+
+  const today = startOfDay(new Date()).getTime();
 
   return dueDates.map<InstallmentSlot>((dueDate, index) => {
-    let status: InstallmentVisualStatus = 'upcoming';
-
-    if (index < paidInstallments) {
-      status = 'paid';
-    } else if (index < dueByToday) {
-      status = 'missed';
-    }
+    const paidSlot = paidSlotMap.get(index);
+    const dueTime = startOfDay(dueDate).getTime();
+    const status: InstallmentVisualStatus = paidSlot
+      ? 'paid'
+      : dueTime <= today
+      ? 'missed'
+      : 'upcoming';
 
     return {
       index: index + 1,
       dueDate,
       status,
-      paidAmount:
-        index < paidInstallments
-          ? repaymentAmounts[index]?.amount ?? loan.installmentAmount ?? null
-          : null,
-      paidDate:
-        index < paidInstallments
-          ? repaymentAmounts[index]?.transactionDate ?? null
-          : null,
+      paidAmount: paidSlot?.amount ?? null,
+      paidDate: paidSlot?.transactionDate ?? null,
     };
   });
 };
