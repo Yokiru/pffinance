@@ -35,6 +35,11 @@ type PublicProfilePayload = {
     photoUrl: string | null;
     status: string;
   };
+  pointsSummary?: {
+    profilePointsTotal: number;
+    activeLoanPoints: number;
+    level: number;
+  };
   activeLoans: PublicLoan[];
   recentRepayments: PublicRepayment[];
 };
@@ -397,6 +402,11 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   }
 
   const { profile, activeLoans } = data;
+  const pointsSummary = data.pointsSummary ?? {
+    profilePointsTotal: 0,
+    activeLoanPoints: 0,
+    level: 1,
+  };
   const maskedPhone = maskPhone(profile.phone);
   const progress = primaryLoan ? getProgress(primaryLoan) : 0;
   const paidCount = slots.filter((slot) => slot.status === 'paid').length;
@@ -443,6 +453,18 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
               </div>
             </div>
           </div>
+        </section>
+
+        <section className="mt-4 grid grid-cols-3 gap-3">
+          <StatBadge value={`${pointsSummary.level}`} label="Level" />
+          <StatBadge
+            value={`${pointsSummary.profilePointsTotal}`}
+            label="Poin Profile"
+          />
+          <StatBadge
+            value={`${pointsSummary.activeLoanPoints}`}
+            label="Poin Pinjaman"
+          />
         </section>
 
         {primaryLoan ? (
@@ -565,6 +587,15 @@ const IdentityRow: React.FC<{ label: string; value: string }> = ({ label, value 
   <div className="flex items-center justify-between gap-3">
     <span className="text-white/40">{label}</span>
     <span className="max-w-[70%] truncate text-right text-white/82">{value}</span>
+  </div>
+);
+
+const StatBadge: React.FC<{ value: string; label: string }> = ({ value, label }) => (
+  <div className="rounded-2xl border border-white/10 bg-[#111214] px-4 py-4 text-center">
+    <p className="text-[1.45rem] font-semibold leading-none tracking-[-0.04em] text-white">
+      {value}
+    </p>
+    <p className="mt-2 text-[0.72rem] text-white/48">{label}</p>
   </div>
 );
 
