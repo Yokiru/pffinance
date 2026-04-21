@@ -54,6 +54,7 @@ type InstallmentSlot = {
   index: number;
   dueDate: Date;
   status: InstallmentVisualStatus;
+  paidAmount: number | null;
 };
 
 const currency = new Intl.NumberFormat('id-ID', {
@@ -116,6 +117,8 @@ const staticHolidays = new Set([
 ]);
 
 const formatCurrency = (value: number) => currency.format(Number(value || 0));
+const formatCompactCurrency = (value: number) =>
+  currency.format(Number(value || 0)).replace('Rp', 'Rp ');
 const formatDate = (value: string | Date) =>
   dateFormatter.format(typeof value === 'string' ? new Date(value) : value);
 
@@ -235,8 +238,18 @@ const countDueByToday = (dueDates: Date[]) => {
     .length;
 };
 
-const buildInstallmentSlots = (loan: PublicLoan) => {
+const buildInstallmentSlots = (
+  loan: PublicLoan,
+  repayments: PublicRepayment[]
+) => {
   const dueDates = generateDueDates(loan);
+  const repaymentAmounts = [...repayments]
+    .filter((repayment) => repayment.loanId === loan.loanId)
+    .sort(
+      (a, b) =>
+        new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
+    )
+    .map((repayment) => repayment.amount);
   const paidInstallments = Math.max(
     0,
     Math.min(
@@ -262,6 +275,10 @@ const buildInstallmentSlots = (loan: PublicLoan) => {
       index: index + 1,
       dueDate,
       status,
+      paidAmount:
+        index < paidInstallments
+          ? repaymentAmounts[index] ?? loan.installmentAmount ?? null
+          : null,
     };
   });
 };
@@ -406,8 +423,11 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
 
   const primaryLoan = data?.activeLoans[0] ?? null;
   const slots = useMemo(
-    () => (primaryLoan ? buildInstallmentSlots(primaryLoan) : []),
-    [primaryLoan]
+    () =>
+      primaryLoan
+        ? buildInstallmentSlots(primaryLoan, data?.recentRepayments ?? [])
+        : [],
+    [data?.recentRepayments, primaryLoan]
   );
 
   if (loading) {
@@ -551,24 +571,31 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                 <Legend label="Belum jatuh tempo" status="upcoming" />
               </div>
 
-              <div className="mt-5 grid grid-cols-5 gap-2.5">
+              <div className="mt-5 grid grid-cols-2 gap-3">
                 {slots.map((slot) => (
                   <div
                     key={slot.index}
-                    className={`rounded-xl border px-2 py-3 text-center ${getSlotStyles(
+                    className={`rounded-2xl border px-3 py-4 text-center ${getSlotStyles(
                       slot.status
                     )}`}
                     title={`Cicilan ${slot.index} • ${formatDate(slot.dueDate)}`}
                   >
-                    <p className="text-[0.64rem] font-medium opacity-70">
-                      {slot.index}
+                    <p className="text-[0.68rem] font-medium opacity-70">
+                      Cicilan {slot.index}
                     </p>
-                    <p className="mt-1 text-sm font-semibold leading-none">
+                    <p className="mt-2 text-base font-semibold leading-none">
                       {slot.status === 'paid'
                         ? 'OK'
                         : slot.status === 'missed'
                         ? 'X'
                         : '-'}
+                    </p>
+                    <p className="mt-3 text-[0.72rem] leading-5 opacity-85">
+                      {slot.status === 'paid'
+                        ? formatCompactCurrency(slot.paidAmount ?? 0)
+                        : slot.status === 'missed'
+                        ? 'Bolong'
+                        : 'Belum jatuh tempo'}
                     </p>
                   </div>
                 ))}
