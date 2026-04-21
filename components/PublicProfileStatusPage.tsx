@@ -645,11 +645,14 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                   slot.status === 'missed' ? (
                     <div
                       key={slot.index}
-                      className="min-h-[92px] px-1 py-2"
+                      className="min-h-[92px] rounded-xl border border-dashed border-[#ff9c88]/18 bg-transparent px-2.5 py-3 text-center"
                       title={`Cicilan ${slot.index} • Bolong • ${formatDate(slot.dueDate)}`}
                     >
-                      <p className="text-[0.64rem] font-medium text-[#ff9c88]/90">
-                        Bolong {slot.index}
+                      <p className="text-[0.64rem] font-medium text-white/28">
+                        Cicilan {slot.index}
+                      </p>
+                      <p className="mt-7 text-[0.68rem] font-medium text-[#ff9c88]/75">
+                        Bolong
                       </p>
                     </div>
                   ) : (
@@ -663,22 +666,21 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                     <p className="text-[0.64rem] font-medium opacity-70">
                       Cicilan {slot.index}
                     </p>
-                    <p className="mt-1.5 text-sm font-semibold leading-none">
-                      {slot.status === 'paid' ? 'OK' : '-'}
-                    </p>
                     <p className="mt-2 text-[0.68rem] leading-4 opacity-85">
                       {slot.status === 'paid'
                         ? formatShortDate(slot.paidDate)
-                        : 'Belum jatuh tempo'}
+                        : 'Akan datang'}
                     </p>
                     {slot.status === 'paid' ? (
                       <p
-                        className="mt-1 text-[0.72rem] font-semibold leading-4"
+                        className="mt-1.5 text-[0.72rem] font-semibold leading-4"
                         style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
                         >
                           {formatCompactCurrency(slot.paidAmount ?? 0)}
                         </p>
-                      ) : null}
+                      ) : (
+                        <div className="mx-auto mt-4 h-1.5 w-10 rounded-full bg-white/10" />
+                      )}
                   </div>
                   )
                 )}
