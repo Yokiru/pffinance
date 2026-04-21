@@ -404,140 +404,109 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const upcomingCount = slots.filter((slot) => slot.status === 'upcoming').length;
 
   return (
-    <div className="min-h-screen bg-[#060708] text-white">
-      <div className="mx-auto max-w-md px-4 pb-12 pt-5">
-        <div className="mb-5 flex justify-center">
+    <div className="min-h-screen bg-[#09090b] text-white">
+      <div className="mx-auto max-w-md px-4 pb-12 pt-6">
+        <div className="mb-6 flex justify-center">
           <div className="h-1.5 w-16 rounded-full bg-white/10" />
         </div>
 
-        <section className="rounded-[32px] border border-white/8 bg-[#101113] p-4 shadow-[0_16px_42px_rgba(0,0,0,0.34)]">
+        <section className="rounded-3xl border border-white/10 bg-[#111214] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
           <div className="flex items-start gap-4">
             {profile.photoUrl ? (
               <img
                 src={profile.photoUrl}
                 alt={profile.fullName}
-                className="h-20 w-20 rounded-[24px] object-cover"
+                className="h-16 w-16 rounded-2xl object-cover ring-1 ring-white/10"
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-[#1a1d21] text-[2rem] font-bold text-white/92">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#18181b] text-[1.75rem] font-semibold text-white">
                 {getInitial(profile.fullName)}
               </div>
             )}
 
-            <div className="min-w-0 flex-1 pt-1">
+            <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-white/34">
-                    Status Nasabah
-                  </p>
-                  <h1 className="mt-2 truncate text-[2.05rem] font-bold leading-[0.95] tracking-[-0.05em] text-white">
+                  <p className="text-xs font-medium text-white/45">Nasabah</p>
+                  <h1 className="mt-1 truncate text-[1.9rem] font-semibold leading-none tracking-[-0.04em] text-white">
                     {profile.fullName}
                   </h1>
                 </div>
-                <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-white/66">
-                  Live
+                <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.68rem] font-medium text-white/70">
+                  Status Live
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.96rem] text-white/74">
-                {profile.location ? <span>{profile.location}</span> : null}
-                {profile.location && maskedPhone ? (
-                  <span className="text-white/24">•</span>
-                ) : null}
-                {maskedPhone ? <span>{maskedPhone}</span> : null}
+              <div className="mt-4 grid gap-2 text-sm text-white/70">
+                <IdentityRow label="Lokasi" value={profile.location || '-'} />
+                <IdentityRow label="Nomor" value={maskedPhone || '-'} />
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mt-4 grid grid-cols-3 gap-3">
-          <SummaryCard value={`${activeLoans.length}`} label="Pinjaman Aktif" />
-          <SummaryCard value={`${Math.round(progress)}%`} label="Progres" />
-          <SummaryCard value={`${missedCount}`} label="Bolong" />
-        </section>
-
         {primaryLoan ? (
           <>
-            <section className="mt-4 rounded-[30px] border border-white/8 bg-[#101113] p-5">
+            <section className="mt-4 rounded-3xl border border-white/10 bg-[#111214] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/34">
-                    Ringkasan Pinjaman
-                  </p>
-                  <h2 className="mt-2 truncate text-[1.5rem] font-bold tracking-[-0.03em] text-white">
-                    {primaryLoan.loanCode?.trim() || 'Pinjaman Berjalan'}
+                  <p className="text-xs font-medium text-white/45">Tagihan Berjalan</p>
+                  <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.04em] text-white">
+                    {formatCurrency(primaryLoan.remainingAmount)}
                   </h2>
-                  <p className="mt-1.5 text-sm text-white/54">
+                  <p className="mt-1 text-sm text-white/55">
+                    {primaryLoan.loanCode?.trim() || 'Pinjaman aktif'} •{' '}
                     {getRepaymentLabel(primaryLoan)}
                   </p>
                 </div>
-                <div className="rounded-[18px] border border-white/8 bg-[#16181b] px-3 py-2 text-right">
-                  <p className="text-[0.68rem] uppercase tracking-[0.18em] text-white/34">
-                    Cicilan
+                <div className="rounded-2xl border border-white/10 bg-[#18181b] px-3 py-2 text-right">
+                  <p className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-white/40">
+                    Progres
                   </p>
-                  <p className="mt-1 text-lg font-bold text-white">
-                    {primaryLoan.installments}
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {Math.round(progress)}%
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 rounded-[24px] border border-white/8 bg-[#16181b] p-4">
-                <p className="text-[0.72rem] uppercase tracking-[0.18em] text-white/34">
-                  Sisa Tagihan
-                </p>
-                <p className="mt-2 text-[2.05rem] font-bold leading-none tracking-[-0.05em] text-white">
-                  {formatCurrency(primaryLoan.remainingAmount)}
-                </p>
-                <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/[0.06]">
-                  <div
-                    className="h-full rounded-full bg-[#2f6bff] transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <div className="mt-3 flex items-center justify-between text-sm text-white/56">
-                  <span>Sudah dibayar {formatCurrency(primaryLoan.totalRepaidAmount)}</span>
-                  <span>{Math.round(progress)}%</span>
-                </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                <div
+                  className="h-full rounded-full bg-[#2563eb] transition-all"
+                  style={{ width: `${progress}%` }}
+                />
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-5 grid grid-cols-2 gap-3">
                 <InfoCard
                   label="Pinjaman Awal"
                   value={formatCurrency(primaryLoan.principalAmount)}
                 />
                 <InfoCard
-                  label="Total + Bunga"
+                  label="Total Tagihan"
                   value={formatCurrency(primaryLoan.totalTargetAmount)}
                 />
                 <InfoCard
-                  label="Mulai"
-                  value={formatDate(primaryLoan.startDate)}
+                  label="Sudah Dibayar"
+                  value={formatCurrency(primaryLoan.totalRepaidAmount)}
                 />
-                <InfoCard label="Status" value={primaryLoan.status || 'Aktif'} />
+                <InfoCard label="Bolong" value={`${missedCount} Kali`} />
               </div>
             </section>
 
-            <section className="mt-4 rounded-[30px] border border-white/8 bg-[#101113] p-5">
-              <div className="flex items-start justify-between gap-4">
+            <section className="mt-4 rounded-3xl border border-white/10 bg-[#111214] p-5">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/34">
-                    Peta Cicilan
-                  </p>
-                  <h3 className="mt-2 text-[1.45rem] font-bold tracking-[-0.03em] text-white">
-                    Status Setoran
+                  <p className="text-xs font-medium text-white/45">Table Cicilan</p>
+                  <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                    Status {primaryLoan.installments} Kali
                   </h3>
                 </div>
-                <div className="rounded-[18px] border border-white/8 bg-[#16181b] px-3 py-2 text-right">
-                  <p className="text-[0.68rem] uppercase tracking-[0.18em] text-white/34">
-                    Terbayar
-                  </p>
-                  <p className="mt-1 text-lg font-bold text-[#2f6bff]">
-                    {paidCount}
-                  </p>
+                <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.72rem] font-medium text-white/62">
+                  {paidCount}/{primaryLoan.installments} selesai
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/58">
+              <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/56">
                 <Legend label="Sudah bayar" status="paid" />
                 <Legend label="Bolong" status="missed" />
                 <Legend label="Belum jatuh tempo" status="upcoming" />
@@ -547,15 +516,15 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                 {slots.map((slot) => (
                   <div
                     key={slot.index}
-                    className={`rounded-[16px] border px-2 py-3 text-center ${getSlotStyles(
+                    className={`rounded-xl border px-2 py-3 text-center ${getSlotStyles(
                       slot.status
                     )}`}
                     title={`Cicilan ${slot.index} • ${formatDate(slot.dueDate)}`}
                   >
-                    <p className="text-[0.66rem] font-medium opacity-75">
-                      #{slot.index}
+                    <p className="text-[0.64rem] font-medium opacity-70">
+                      {slot.index}
                     </p>
-                    <p className="mt-1 text-[1.02rem] font-bold leading-none">
+                    <p className="mt-1 text-sm font-semibold leading-none">
                       {slot.status === 'paid'
                         ? 'OK'
                         : slot.status === 'missed'
@@ -565,24 +534,16 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                   </div>
                 ))}
               </div>
-
-              <div className="mt-5 grid grid-cols-3 gap-3">
-                <MiniStat label="Sudah Bayar" value={`${paidCount}`} />
-                <MiniStat label="Bolong" value={`${missedCount}`} />
-                <MiniStat label="Sisa Slot" value={`${upcomingCount}`} />
-              </div>
             </section>
           </>
         ) : (
-          <section className="mt-4 rounded-[30px] border border-white/8 bg-[#101113] px-6 py-8 text-center">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-white/34">
-              Status Pinjaman
-            </p>
-            <p className="mt-3 text-[1.85rem] font-bold tracking-[-0.04em] text-white">
+          <section className="mt-4 rounded-3xl border border-white/10 bg-[#111214] px-6 py-8 text-center">
+            <p className="text-xs font-medium text-white/45">Tagihan Berjalan</p>
+            <p className="mt-2 text-[1.7rem] font-semibold tracking-[-0.04em] text-white">
               Tidak ada pinjaman aktif
             </p>
-            <p className="mx-auto mt-3 max-w-[22rem] text-base leading-7 text-white/56">
-              Saat ini belum ada pinjaman yang sedang berjalan untuk profile ini.
+            <p className="mx-auto mt-3 max-w-[22rem] text-sm leading-6 text-white/58">
+              Saat ini belum ada pinjaman yang sedang berjalan untuk nasabah ini.
             </p>
           </section>
         )}
@@ -600,12 +561,19 @@ const SummaryCard: React.FC<{ value: string; label: string }> = ({ value, label 
   </div>
 );
 
+const IdentityRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex items-center justify-between gap-3">
+    <span className="text-white/40">{label}</span>
+    <span className="max-w-[70%] truncate text-right text-white/82">{value}</span>
+  </div>
+);
+
 const InfoCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-[22px] border border-white/8 bg-[#16181b] px-4 py-4">
-    <p className="text-[0.72rem] uppercase tracking-[0.16em] text-white/36">
+  <div className="rounded-2xl border border-white/10 bg-[#18181b] px-4 py-4">
+    <p className="text-[0.68rem] uppercase tracking-[0.14em] text-white/38">
       {label}
     </p>
-    <p className="mt-2 text-lg font-bold leading-tight text-white">{value}</p>
+    <p className="mt-2 text-lg font-semibold leading-tight text-white">{value}</p>
   </div>
 );
 
