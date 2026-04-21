@@ -355,10 +355,17 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
       setLoading(true);
       setError(null);
 
-      const { data: payload, error } = await publicStatusSupabase.rpc(
-        'get_public_profile_status',
-        { p_share_token: shareToken }
-      );
+      const [statusResult, pointsResult] = await Promise.all([
+        publicStatusSupabase.rpc('get_public_profile_status', {
+          p_share_token: shareToken,
+        }),
+        publicStatusSupabase.rpc('get_public_profile_points_summary', {
+          p_share_token: shareToken,
+        }),
+      ]);
+
+      const payload = statusResult.data;
+      const error = statusResult.error;
 
       if (!mounted) return;
 
@@ -376,7 +383,17 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
         return;
       }
 
-      setData(payload as PublicProfilePayload);
+      const mergedPayload: PublicProfilePayload = {
+        ...(payload as PublicProfilePayload),
+        pointsSummary:
+          (pointsResult.data as PublicProfilePayload['pointsSummary']) ?? {
+            profilePointsTotal: 0,
+            activeLoanPoints: 0,
+            level: 1,
+          },
+      };
+
+      setData(mergedPayload);
       setLoading(false);
     };
 
