@@ -636,12 +636,23 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
 
               <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/56">
                 <Legend label="Sudah bayar" status="paid" />
-                <Legend label="Bolong" status="missed" />
                 <Legend label="Belum jatuh tempo" status="upcoming" />
+                <span className="text-[#ff9c88]">Slot kosong berarti bolong</span>
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                {slots.map((slot) => (
+              <div className="mt-5 grid grid-cols-2 gap-2.5">
+                {slots.map((slot) =>
+                  slot.status === 'missed' ? (
+                    <div
+                      key={slot.index}
+                      className="min-h-[92px] px-1 py-2"
+                      title={`Cicilan ${slot.index} • Bolong • ${formatDate(slot.dueDate)}`}
+                    >
+                      <p className="text-[0.64rem] font-medium text-[#ff9c88]/90">
+                        Bolong {slot.index}
+                      </p>
+                    </div>
+                  ) : (
                   <div
                     key={slot.index}
                     className={`rounded-xl px-2.5 py-3 text-center ${getSlotStyles(
@@ -653,29 +664,24 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                       Cicilan {slot.index}
                     </p>
                     <p className="mt-1.5 text-sm font-semibold leading-none">
-                      {slot.status === 'paid'
-                        ? 'OK'
-                        : slot.status === 'missed'
-                        ? 'X'
-                        : '-'}
+                      {slot.status === 'paid' ? 'OK' : '-'}
                     </p>
                     <p className="mt-2 text-[0.68rem] leading-4 opacity-85">
                       {slot.status === 'paid'
                         ? formatShortDate(slot.paidDate)
-                        : slot.status === 'missed'
-                        ? 'Bolong'
                         : 'Belum jatuh tempo'}
                     </p>
                     {slot.status === 'paid' ? (
                       <p
                         className="mt-1 text-[0.72rem] font-semibold leading-4"
                         style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
-                      >
-                        {formatCompactCurrency(slot.paidAmount ?? 0)}
-                      </p>
-                    ) : null}
+                        >
+                          {formatCompactCurrency(slot.paidAmount ?? 0)}
+                        </p>
+                      ) : null}
                   </div>
-                ))}
+                  )
+                )}
               </div>
             </section>
           </>
