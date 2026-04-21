@@ -55,6 +55,7 @@ type InstallmentSlot = {
   dueDate: Date;
   status: InstallmentVisualStatus;
   paidAmount: number | null;
+  paidDate: string | null;
 };
 
 const currency = new Intl.NumberFormat('id-ID', {
@@ -121,6 +122,14 @@ const formatCompactCurrency = (value: number) =>
   currency.format(Number(value || 0)).replace('Rp', 'Rp ');
 const formatDate = (value: string | Date) =>
   dateFormatter.format(typeof value === 'string' ? new Date(value) : value);
+const formatShortDate = (value: string | Date | null) => {
+  if (!value) return '-';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'short',
+  }).format(date);
+};
 
 const maskPhone = (value: string | null) => {
   if (!value) return null;
@@ -248,8 +257,7 @@ const buildInstallmentSlots = (
     .sort(
       (a, b) =>
         new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
-    )
-    .map((repayment) => repayment.amount);
+    );
   const paidInstallments = Math.max(
     0,
     Math.min(
@@ -277,7 +285,11 @@ const buildInstallmentSlots = (
       status,
       paidAmount:
         index < paidInstallments
-          ? repaymentAmounts[index] ?? loan.installmentAmount ?? null
+          ? repaymentAmounts[index]?.amount ?? loan.installmentAmount ?? null
+          : null,
+      paidDate:
+        index < paidInstallments
+          ? repaymentAmounts[index]?.transactionDate ?? null
           : null,
     };
   });
@@ -296,11 +308,11 @@ const getRepaymentLabel = (loan: PublicLoan) => {
 const getSlotStyles = (status: InstallmentVisualStatus) => {
   switch (status) {
     case 'paid':
-      return 'border-[#2f6bff] bg-[#2f6bff] text-white';
+      return 'bg-[#2f6bff] text-white';
     case 'missed':
-      return 'border-[#6b2926] bg-[#351615] text-[#ff9c88]';
+      return 'bg-[#351615] text-[#ff9c88]';
     default:
-      return 'border-white/8 bg-white/[0.03] text-white/52';
+      return 'bg-white/[0.05] text-white/52';
   }
 };
 
@@ -364,6 +376,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const [data, setData] = useState<PublicProfilePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -421,7 +434,25 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
     };
   }, [shareToken]);
 
-  const primaryLoan = data?.activeLoans[0] ?? null;
+  useEffect(() => {
+    if (!data?.activeLoans?.length) {
+      setSelectedLoanId(null);
+      return;
+    }
+
+    setSelectedLoanId((current) => {
+      if (current && data.activeLoans.some((loan) => loan.loanId === current)) {
+        return current;
+      }
+      return data.activeLoans[0].loanId;
+    });
+  }, [data?.activeLoans]);
+
+  const activeLoans = data?.activeLoans ?? [];
+  const primaryLoan =
+    activeLoans.find((loan) => loan.loanId === selectedLoanId) ??
+    activeLoans[0] ??
+    null;
   const slots = useMemo(
     () =>
       primaryLoan
@@ -438,7 +469,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
     return <ErrorState error={error ?? 'Terjadi kesalahan.'} />;
   }
 
-  const { profile, activeLoans } = data;
+  const { profile } = data;
   const pointsSummary = data.pointsSummary ?? {
     profilePointsTotal: 0,
     activeLoanPoints: 0,
@@ -451,19 +482,18 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const upcomingCount = slots.filter((slot) => slot.status === 'upcoming').length;
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white">
+    <div
+      className="min-h-screen bg-[#09090b] text-white"
+      style={{ fontFamily: 'Geist, sans-serif' }}
+    >
       <div className="mx-auto max-w-md px-4 pb-12 pt-6">
-        <div className="mb-6 flex justify-center">
-          <div className="h-1.5 w-16 rounded-full bg-white/10" />
-        </div>
-
-        <section className="rounded-3xl border border-white/10 bg-[#111214] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+        <section className="rounded-3xl bg-[#111214] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
           <div className="flex items-start gap-4">
             {profile.photoUrl ? (
               <img
                 src={profile.photoUrl}
                 alt={profile.fullName}
-                className="h-16 w-16 rounded-2xl object-cover ring-1 ring-white/10"
+                className="h-16 w-16 rounded-2xl object-cover"
               />
             ) : (
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#18181b] text-[1.75rem] font-semibold text-white">
@@ -479,7 +509,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                     {profile.fullName}
                   </h1>
                 </div>
-                <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.68rem] font-medium text-white/70">
+                <div className="rounded-full bg-white/[0.05] px-3 py-1.5 text-[0.68rem] font-medium text-white/70">
                   Status Live
                 </div>
               </div>
@@ -506,24 +536,63 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
 
         {primaryLoan ? (
           <>
-            <section className="mt-4 rounded-3xl border border-white/10 bg-[#111214] p-5">
+            {activeLoans.length > 1 ? (
+              <section className="mt-4 rounded-3xl bg-[#111214] p-4">
+                <p className="text-xs font-medium text-white/45">Pinjaman Aktif</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {activeLoans.map((loan, index) => {
+                    const selected = loan.loanId === primaryLoan.loanId;
+                    return (
+                      <button
+                        key={loan.loanId}
+                        type="button"
+                        onClick={() => setSelectedLoanId(loan.loanId)}
+                        className={`rounded-2xl px-3 py-3 text-left transition ${
+                          selected
+                            ? 'bg-[#2563eb] text-white'
+                            : 'bg-[#18181b] text-white/80'
+                        }`}
+                      >
+                        <p className="text-[0.68rem] font-medium uppercase tracking-[0.14em] opacity-70">
+                          Pinjaman {index + 1}
+                        </p>
+                        <p className="mt-1 truncate text-sm font-semibold">
+                          {loan.loanCode?.trim() || 'Pinjaman aktif'}
+                        </p>
+                        <p className="mt-1 text-xs opacity-75">
+                          <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>
+                            {formatCurrency(loan.remainingAmount)}
+                          </span>
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="mt-4 rounded-3xl bg-[#111214] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-white/45">Tagihan Berjalan</p>
                   <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.04em] text-white">
-                    {formatCurrency(primaryLoan.remainingAmount)}
+                    <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>
+                      {formatCurrency(primaryLoan.remainingAmount)}
+                    </span>
                   </h2>
                   <p className="mt-1 text-sm text-white/55">
                     {primaryLoan.loanCode?.trim() || 'Pinjaman aktif'} •{' '}
                     {getRepaymentLabel(primaryLoan)}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-[#18181b] px-3 py-2 text-right">
+                <div className="rounded-2xl bg-[#18181b] px-3 py-2 text-right">
                   <p className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-white/40">
                     Progres
                   </p>
                   <p className="mt-1 text-lg font-semibold text-white">
-                    {Math.round(progress)}%
+                    <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>
+                      {Math.round(progress)}%
+                    </span>
                   </p>
                 </div>
               </div>
@@ -535,7 +604,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                 />
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="mt-5 grid grid-cols-2 gap-2.5">
                 <InfoCard
                   label="Pinjaman Awal"
                   value={formatCurrency(primaryLoan.principalAmount)}
@@ -552,7 +621,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
               </div>
             </section>
 
-            <section className="mt-4 rounded-3xl border border-white/10 bg-[#111214] p-5">
+            <section className="mt-4 rounded-3xl bg-[#111214] p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-white/45">Table Cicilan</p>
@@ -560,7 +629,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                     Status {primaryLoan.installments} Kali
                   </h3>
                 </div>
-                <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.72rem] font-medium text-white/62">
+                <div className="rounded-full bg-white/[0.05] px-3 py-1.5 text-[0.72rem] font-medium text-white/62">
                   {paidCount}/{primaryLoan.installments} selesai
                 </div>
               </div>
@@ -575,35 +644,43 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
                 {slots.map((slot) => (
                   <div
                     key={slot.index}
-                    className={`rounded-2xl border px-3 py-4 text-center ${getSlotStyles(
+                    className={`rounded-xl px-2.5 py-3 text-center ${getSlotStyles(
                       slot.status
                     )}`}
                     title={`Cicilan ${slot.index} • ${formatDate(slot.dueDate)}`}
                   >
-                    <p className="text-[0.68rem] font-medium opacity-70">
+                    <p className="text-[0.64rem] font-medium opacity-70">
                       Cicilan {slot.index}
                     </p>
-                    <p className="mt-2 text-base font-semibold leading-none">
+                    <p className="mt-1.5 text-sm font-semibold leading-none">
                       {slot.status === 'paid'
                         ? 'OK'
                         : slot.status === 'missed'
                         ? 'X'
                         : '-'}
                     </p>
-                    <p className="mt-3 text-[0.72rem] leading-5 opacity-85">
+                    <p className="mt-2 text-[0.68rem] leading-4 opacity-85">
                       {slot.status === 'paid'
-                        ? formatCompactCurrency(slot.paidAmount ?? 0)
+                        ? formatShortDate(slot.paidDate)
                         : slot.status === 'missed'
                         ? 'Bolong'
                         : 'Belum jatuh tempo'}
                     </p>
+                    {slot.status === 'paid' ? (
+                      <p
+                        className="mt-1 text-[0.72rem] font-semibold leading-4"
+                        style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
+                      >
+                        {formatCompactCurrency(slot.paidAmount ?? 0)}
+                      </p>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </section>
           </>
         ) : (
-          <section className="mt-4 rounded-3xl border border-white/10 bg-[#111214] px-6 py-8 text-center">
+          <section className="mt-4 rounded-3xl bg-[#111214] px-6 py-8 text-center">
             <p className="text-xs font-medium text-white/45">Tagihan Berjalan</p>
             <p className="mt-2 text-[1.7rem] font-semibold tracking-[-0.04em] text-white">
               Tidak ada pinjaman aktif
@@ -635,20 +712,22 @@ const IdentityRow: React.FC<{ label: string; value: string }> = ({ label, value 
 );
 
 const StatBadge: React.FC<{ value: string; label: string }> = ({ value, label }) => (
-  <div className="rounded-2xl border border-white/10 bg-[#111214] px-4 py-4 text-center">
+  <div className="rounded-2xl bg-[#111214] px-4 py-4 text-center">
     <p className="text-[1.45rem] font-semibold leading-none tracking-[-0.04em] text-white">
-      {value}
+      <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>{value}</span>
     </p>
     <p className="mt-2 text-[0.72rem] text-white/48">{label}</p>
   </div>
 );
 
 const InfoCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-2xl border border-white/10 bg-[#18181b] px-4 py-4">
+  <div className="rounded-2xl bg-[#18181b] px-4 py-4">
     <p className="text-[0.68rem] uppercase tracking-[0.14em] text-white/38">
       {label}
     </p>
-    <p className="mt-2 text-lg font-semibold leading-tight text-white">{value}</p>
+    <p className="mt-2 text-lg font-semibold leading-tight text-white">
+      <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>{value}</span>
+    </p>
   </div>
 );
 
