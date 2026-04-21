@@ -384,29 +384,30 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   return (
     <div className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-md pb-10">
-        <section className="relative min-h-[430px] overflow-hidden rounded-b-[34px] bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_rgba(12,22,38,0.94)_54%,_#040506_100%)]">
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(0,0,0,0.08)_42%,rgba(0,0,0,0.58)_74%,rgba(0,0,0,0.92)_100%)]" />
+        <section className="relative min-h-[392px] overflow-hidden rounded-b-[34px] bg-[linear-gradient(180deg,_#204A85_0%,_#173867_36%,_#0E1728_68%,_#040506_100%)] shadow-[0_12px_28px_rgba(0,0,0,0.34)]">
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02)_0%,rgba(0,0,0,0)_34%,rgba(0,0,0,0.33)_60%,rgba(0,0,0,0.8)_82%,rgba(0,0,0,0.97)_100%)]" />
+          <div className="absolute inset-x-0 top-0 h-[118px] bg-[linear-gradient(180deg,rgba(0,0,0,0.45)_0%,rgba(0,0,0,0.16)_45%,rgba(0,0,0,0)_100%)]" />
 
           {profile.photoUrl ? (
             <img
               src={profile.photoUrl}
               alt={profile.fullName}
-              className="absolute inset-0 h-full w-full object-cover mix-blend-luminosity opacity-25"
+              className="absolute inset-0 h-full w-full object-cover object-top"
             />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-[10rem] font-bold text-white/10">
+            <div className="absolute inset-0 flex items-center justify-center text-[10rem] font-bold text-white/14">
               {getInitial(profile.fullName)}
             </div>
           )}
 
-          <div className="relative px-6 pb-8 pt-8">
-            <div className="mx-auto mb-10 h-1.5 w-16 rounded-full bg-white/15" />
+          <div className="relative px-6 pb-[18px] pt-8">
+            <div className="mx-auto mb-12 h-1.5 w-16 rounded-full bg-white/18" />
 
-            <div className="mt-28">
-              <h1 className="max-w-[85%] text-[2.3rem] font-bold leading-[0.95] tracking-[-0.04em]">
+            <div className="mt-[156px]">
+              <h1 className="max-w-[88%] text-[2.75rem] font-bold leading-[0.92] tracking-[-0.055em] text-white">
                 {profile.fullName}
               </h1>
-              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.95rem] text-white/78">
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[1rem] font-medium text-white/82">
                 {profile.location ? <span>{profile.location}</span> : null}
                 {profile.location && maskedPhone ? (
                   <span className="text-white/35">•</span>
@@ -415,19 +416,19 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
               </div>
             </div>
 
-            <div className="mt-10 grid grid-cols-3 gap-3 rounded-[26px] bg-black/18 px-4 py-5 backdrop-blur-[6px]">
+            <div className="mt-[18px] grid grid-cols-3 gap-0 rounded-[28px] bg-white/[0.035] px-4 py-5 backdrop-blur-[4px]">
               <div className="text-center">
-                <p className="text-[2rem] font-bold leading-none">{activeLoans.length}</p>
+                <p className="text-[2.15rem] font-bold leading-none text-white">{activeLoans.length}</p>
                 <p className="mt-2 text-xs text-white/60">Pinjaman Aktif</p>
               </div>
               <div className="border-x border-white/10 px-2 text-center">
-                <p className="text-[2rem] font-bold leading-none">
+                <p className="text-[2.15rem] font-bold leading-none text-white">
                   {primaryLoan ? `${Math.round(progress)}%` : '0%'}
                 </p>
                 <p className="mt-2 text-xs text-white/60">Progres</p>
               </div>
               <div className="text-center">
-                <p className="text-[2rem] font-bold leading-none">{missedCount}</p>
+                <p className="text-[2.15rem] font-bold leading-none text-white">{missedCount}</p>
                 <p className="mt-2 text-xs text-white/60">Bolong</p>
               </div>
             </div>
