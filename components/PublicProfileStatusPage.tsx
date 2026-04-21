@@ -155,7 +155,10 @@ const shiftToNextWorkingDay = (date: Date) => {
   return current;
 };
 
-const normalizeWeekday = (value: number | null | undefined, fallback: number) => {
+const normalizeWeekday = (
+  value: number | null | undefined,
+  fallback: number
+) => {
   if (value && value >= 1 && value <= 7) return value;
   if (fallback >= 1 && fallback <= 7) return fallback;
   return 1;
@@ -177,7 +180,11 @@ const generateDueDates = (loan: PublicLoan) => {
       loan.weeklyDueWeekday,
       getDartWeekday(start)
     );
-    let slotDate = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+    let slotDate = new Date(
+      start.getFullYear(),
+      start.getMonth(),
+      start.getDate() + 1
+    );
     while (getDartWeekday(slotDate) !== targetWeekday) {
       slotDate = new Date(
         slotDate.getFullYear(),
@@ -198,12 +205,20 @@ const generateDueDates = (loan: PublicLoan) => {
     return dueDates;
   }
 
-  let cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+  let cursor = new Date(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate() + 1
+  );
   while (dueDates.length < loan.installments) {
     if (isWorkingDay(cursor)) {
       dueDates.push(startOfDay(cursor));
     }
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    cursor = new Date(
+      cursor.getFullYear(),
+      cursor.getMonth(),
+      cursor.getDate() + 1
+    );
   }
 
   return dueDates;
@@ -211,16 +226,20 @@ const generateDueDates = (loan: PublicLoan) => {
 
 const countDueByToday = (dueDates: Date[]) => {
   const today = startOfDay(new Date());
-  return dueDates.filter((date) => startOfDay(date).getTime() <= today.getTime()).length;
+  return dueDates.filter((date) => startOfDay(date).getTime() <= today.getTime())
+    .length;
 };
 
-const buildInstallmentSlots = (loan: PublicLoan, recentRepayments: PublicRepayment[]) => {
+const buildInstallmentSlots = (loan: PublicLoan) => {
   const dueDates = generateDueDates(loan);
   const paidInstallments = Math.max(
     0,
     Math.min(
       loan.installments,
-      Math.floor((loan.totalRepaidAmount || 0) / Math.max(loan.installmentAmount || 1, 1))
+      Math.floor(
+        (loan.totalRepaidAmount || 0) /
+          Math.max(loan.installmentAmount || 1, 1)
+      )
     )
   );
   const dueByToday = countDueByToday(dueDates);
@@ -247,32 +266,77 @@ const getRepaymentLabel = (loan: PublicLoan) => {
     const weekday = loan.weeklyDueWeekday
       ? weekdayLabels[loan.weeklyDueWeekday]
       : 'Mingguan';
-    return `Mingguan • ${weekday}`;
+    return `Mingguan / ${weekday}`;
   }
   return 'Harian';
 };
 
-const getSlotColor = (status: InstallmentVisualStatus) => {
+const getSlotStyles = (status: InstallmentVisualStatus) => {
   switch (status) {
     case 'paid':
-      return 'bg-[#2f6bff] text-white border-[#2f6bff]';
+      return 'border-[#2f6bff] bg-[#2f6bff] text-white';
     case 'missed':
-      return 'bg-[#351615] text-[#ff8f78] border-[#6b2926]';
+      return 'border-[#6b2926] bg-[#351615] text-[#ff9c88]';
     default:
-      return 'bg-white/[0.04] text-white/55 border-white/8';
+      return 'border-white/8 bg-white/[0.03] text-white/52';
   }
 };
 
-const getLegendColor = (status: InstallmentVisualStatus) => {
+const getLegendStyles = (status: InstallmentVisualStatus) => {
   switch (status) {
     case 'paid':
       return 'bg-[#2f6bff]';
     case 'missed':
-      return 'bg-[#ff8f78]';
+      return 'bg-[#ff9c88]';
     default:
-      return 'bg-white/20';
+      return 'bg-white/18';
   }
 };
+
+const LoadingState = () => (
+  <div className="min-h-screen bg-[#050607] text-white">
+    <div className="mx-auto flex min-h-screen max-w-md items-center justify-center px-5">
+      <div className="w-full rounded-[28px] border border-white/8 bg-[#111315] p-6 text-center">
+        <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/15 border-t-white" />
+        <p className="text-lg font-semibold tracking-[-0.02em]">
+          Memuat status nasabah
+        </p>
+        <p className="mt-2 text-sm text-white/58">
+          Tunggu sebentar, data sedang diambil.
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
+const ErrorState: React.FC<{ error: string }> = ({ error }) => (
+  <div className="min-h-screen bg-[#050607] text-white">
+    <div className="mx-auto flex min-h-screen max-w-md items-center justify-center px-5">
+      <div className="w-full rounded-[28px] border border-[#ff8b6b]/18 bg-[#181212] p-6 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#ff8b6b]/25 bg-[#ff8b6b]/10 text-[#ff8b6b]">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M12 8V13"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            />
+            <circle cx="12" cy="17" r="1.2" fill="currentColor" />
+            <path
+              d="M12 3.5C7.30558 3.5 3.5 7.30558 3.5 12C3.5 16.6944 7.30558 20.5 12 20.5C16.6944 20.5 20.5 16.6944 20.5 12C20.5 7.30558 16.6944 3.5 12 3.5Z"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+          </svg>
+        </div>
+        <p className="text-xl font-bold tracking-[-0.02em]">
+          Link tidak bisa dibuka
+        </p>
+        <p className="mt-3 text-sm leading-6 text-white/65">{error}</p>
+      </div>
+    </div>
+  </div>
+);
 
 const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const [data, setData] = useState<PublicProfilePayload | null>(null);
@@ -288,9 +352,7 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
 
       const { data: payload, error } = await publicStatusSupabase.rpc(
         'get_public_profile_status',
-        {
-          p_share_token: shareToken,
-        }
+        { p_share_token: shareToken }
       );
 
       if (!mounted) return;
@@ -322,56 +384,16 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
 
   const primaryLoan = data?.activeLoans[0] ?? null;
   const slots = useMemo(
-    () =>
-      primaryLoan && data
-        ? buildInstallmentSlots(primaryLoan, data.recentRepayments)
-        : [],
-    [primaryLoan, data]
+    () => (primaryLoan ? buildInstallmentSlots(primaryLoan) : []),
+    [primaryLoan]
   );
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-black text-white">
-        <div className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6">
-          <div className="w-full rounded-[28px] border border-white/10 bg-white/[0.04] p-6 text-center">
-            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-            <p className="text-lg font-semibold">Memuat status nasabah</p>
-            <p className="mt-2 text-sm text-white/60">
-              Tunggu sebentar, data sedang diambil.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingState />;
   }
 
   if (error || !data) {
-    return (
-      <div className="min-h-screen bg-black text-white">
-        <div className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6">
-          <div className="w-full rounded-[28px] border border-[#ff8b6b]/20 bg-[#181212] p-6 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#ff8b6b]/30 bg-[#ff8b6b]/10 text-[#ff8b6b]">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 8V13"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                />
-                <circle cx="12" cy="17" r="1.2" fill="currentColor" />
-                <path
-                  d="M12 3.5C7.30558 3.5 3.5 7.30558 3.5 12C3.5 16.6944 7.30558 20.5 12 20.5C16.6944 20.5 20.5 16.6944 20.5 12C20.5 7.30558 16.6944 3.5 12 3.5Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <p className="text-xl font-bold">Link tidak bisa dibuka</p>
-            <p className="mt-3 text-sm leading-6 text-white/65">{error}</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <ErrorState error={error ?? 'Terjadi kesalahan.'} />;
   }
 
   const { profile, activeLoans } = data;
@@ -382,196 +404,215 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const upcomingCount = slots.filter((slot) => slot.status === 'upcoming').length;
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto max-w-md pb-10">
-        <section className="relative min-h-[392px] overflow-hidden rounded-b-[34px] bg-[linear-gradient(180deg,_#204A85_0%,_#173867_36%,_#0E1728_68%,_#040506_100%)] shadow-[0_12px_28px_rgba(0,0,0,0.34)]">
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02)_0%,rgba(0,0,0,0)_34%,rgba(0,0,0,0.33)_60%,rgba(0,0,0,0.8)_82%,rgba(0,0,0,0.97)_100%)]" />
-          <div className="absolute inset-x-0 top-0 h-[118px] bg-[linear-gradient(180deg,rgba(0,0,0,0.45)_0%,rgba(0,0,0,0.16)_45%,rgba(0,0,0,0)_100%)]" />
+    <div className="min-h-screen bg-[#060708] text-white">
+      <div className="mx-auto max-w-md px-4 pb-12 pt-5">
+        <div className="mb-5 flex justify-center">
+          <div className="h-1.5 w-16 rounded-full bg-white/10" />
+        </div>
 
-          {profile.photoUrl ? (
-            <img
-              src={profile.photoUrl}
-              alt={profile.fullName}
-              className="absolute inset-0 h-full w-full object-cover object-top"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-[10rem] font-bold text-white/14">
-              {getInitial(profile.fullName)}
-            </div>
-          )}
+        <section className="rounded-[32px] border border-white/8 bg-[#101113] p-4 shadow-[0_16px_42px_rgba(0,0,0,0.34)]">
+          <div className="flex items-start gap-4">
+            {profile.photoUrl ? (
+              <img
+                src={profile.photoUrl}
+                alt={profile.fullName}
+                className="h-20 w-20 rounded-[24px] object-cover"
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-[#1a1d21] text-[2rem] font-bold text-white/92">
+                {getInitial(profile.fullName)}
+              </div>
+            )}
 
-          <div className="relative px-6 pb-[18px] pt-8">
-            <div className="mx-auto mb-12 h-1.5 w-16 rounded-full bg-white/18" />
+            <div className="min-w-0 flex-1 pt-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-white/34">
+                    Status Nasabah
+                  </p>
+                  <h1 className="mt-2 truncate text-[2.05rem] font-bold leading-[0.95] tracking-[-0.05em] text-white">
+                    {profile.fullName}
+                  </h1>
+                </div>
+                <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-white/66">
+                  Live
+                </div>
+              </div>
 
-            <div className="mt-[156px]">
-              <h1 className="max-w-[88%] text-[2.75rem] font-bold leading-[0.92] tracking-[-0.055em] text-white">
-                {profile.fullName}
-              </h1>
-              <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[1rem] font-medium text-white/82">
+              <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.96rem] text-white/74">
                 {profile.location ? <span>{profile.location}</span> : null}
                 {profile.location && maskedPhone ? (
-                  <span className="text-white/35">•</span>
+                  <span className="text-white/24">•</span>
                 ) : null}
                 {maskedPhone ? <span>{maskedPhone}</span> : null}
-              </div>
-            </div>
-
-            <div className="mt-[18px] grid grid-cols-3 gap-0 rounded-[28px] bg-white/[0.035] px-4 py-5 backdrop-blur-[4px]">
-              <div className="text-center">
-                <p className="text-[2.15rem] font-bold leading-none text-white">{activeLoans.length}</p>
-                <p className="mt-2 text-xs text-white/60">Pinjaman Aktif</p>
-              </div>
-              <div className="border-x border-white/10 px-2 text-center">
-                <p className="text-[2.15rem] font-bold leading-none text-white">
-                  {primaryLoan ? `${Math.round(progress)}%` : '0%'}
-                </p>
-                <p className="mt-2 text-xs text-white/60">Progres</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[2.15rem] font-bold leading-none text-white">{missedCount}</p>
-                <p className="mt-2 text-xs text-white/60">Bolong</p>
               </div>
             </div>
           </div>
         </section>
 
-        <div className="space-y-4 px-4 pt-4">
-          {primaryLoan ? (
-            <>
-              <section className="rounded-[30px] bg-[#111315] p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/38">
-                      Pinjaman Berjalan
-                    </p>
-                    <h2 className="mt-2 truncate text-[1.9rem] font-bold leading-tight tracking-[-0.03em]">
-                      {primaryLoan.loanCode?.trim() || 'Pinjaman Aktif'}
-                    </h2>
-                    <p className="mt-2 text-sm text-white/58">
-                      {getRepaymentLabel(primaryLoan)}
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-white/[0.06] px-3 py-2 text-xs font-semibold text-white/70">
-                    Aktif
-                  </div>
-                </div>
+        <section className="mt-4 grid grid-cols-3 gap-3">
+          <SummaryCard value={`${activeLoans.length}`} label="Pinjaman Aktif" />
+          <SummaryCard value={`${Math.round(progress)}%`} label="Progres" />
+          <SummaryCard value={`${missedCount}`} label="Bolong" />
+        </section>
 
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <InfoCard
-                    label="Pinjaman Awal"
-                    value={formatCurrency(primaryLoan.principalAmount)}
-                  />
-                  <InfoCard
-                    label="Total + Bunga"
-                    value={formatCurrency(primaryLoan.totalTargetAmount)}
-                  />
-                  <InfoCard
-                    label="Sudah Dibayar"
-                    value={formatCurrency(primaryLoan.totalRepaidAmount)}
-                  />
-                  <InfoCard
-                    label="Sisa Tagihan"
-                    value={formatCurrency(primaryLoan.remainingAmount)}
-                  />
+        {primaryLoan ? (
+          <>
+            <section className="mt-4 rounded-[30px] border border-white/8 bg-[#101113] p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/34">
+                    Ringkasan Pinjaman
+                  </p>
+                  <h2 className="mt-2 truncate text-[1.5rem] font-bold tracking-[-0.03em] text-white">
+                    {primaryLoan.loanCode?.trim() || 'Pinjaman Berjalan'}
+                  </h2>
+                  <p className="mt-1.5 text-sm text-white/54">
+                    {getRepaymentLabel(primaryLoan)}
+                  </p>
                 </div>
-
-                <div className="mt-5 rounded-[24px] bg-black/25 p-4">
-                  <div className="mb-3 flex items-center justify-between text-sm text-white/65">
-                    <span>Tertagih</span>
-                    <span>{Math.round(progress)}%</span>
-                  </div>
-                  <div className="h-3 overflow-hidden rounded-full bg-white/[0.07]">
-                    <div
-                      className="h-full rounded-full bg-[#2f6bff] transition-all"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+                <div className="rounded-[18px] border border-white/8 bg-[#16181b] px-3 py-2 text-right">
+                  <p className="text-[0.68rem] uppercase tracking-[0.18em] text-white/34">
+                    Cicilan
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-white">
+                    {primaryLoan.installments}
+                  </p>
                 </div>
-              </section>
+              </div>
 
-              <section className="rounded-[30px] bg-[#111315] p-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-[1.35rem] font-bold tracking-[-0.02em]">
-                      Status Setoran
-                    </h3>
-                    <p className="mt-1 text-sm text-white/55">
-                      Kotak biru sudah bayar, merah bolong, abu belum jatuh tempo.
-                    </p>
-                  </div>
-                  <div className="rounded-[18px] bg-white/[0.04] px-3 py-2 text-right">
-                    <p className="text-xs text-white/45">Cicilan</p>
-                    <p className="mt-1 text-lg font-bold">{primaryLoan.installments}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/60">
-                  <Legend label="Sudah bayar" status="paid" />
-                  <Legend label="Bolong" status="missed" />
-                  <Legend label="Belum jatuh tempo" status="upcoming" />
-                </div>
-
-                <div className="mt-5 grid grid-cols-5 gap-2">
-                  {slots.map((slot) => (
-                    <div
-                      key={slot.index}
-                      className={`rounded-[18px] border px-2 py-3 text-center ${getSlotColor(
-                        slot.status
-                      )}`}
-                      title={`Cicilan ${slot.index} • ${formatDate(slot.dueDate)}`}
-                    >
-                      <p className="text-[0.68rem] font-medium opacity-80">#{slot.index}</p>
-                      <p className="mt-1 text-[1.05rem] font-bold leading-none">
-                        {slot.status === 'paid'
-                          ? '✓'
-                          : slot.status === 'missed'
-                          ? '!'
-                          : '•'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-5 grid grid-cols-3 gap-3">
-                  <MiniStat label="Lunas" value={`${paidCount}`} accent="text-[#2f6bff]" />
-                  <MiniStat label="Bolong" value={`${missedCount}`} accent="text-[#ff8f78]" />
-                  <MiniStat
-                    label="Sisa Slot"
-                    value={`${upcomingCount}`}
-                    accent="text-white"
+              <div className="mt-5 rounded-[24px] border border-white/8 bg-[#16181b] p-4">
+                <p className="text-[0.72rem] uppercase tracking-[0.18em] text-white/34">
+                  Sisa Tagihan
+                </p>
+                <p className="mt-2 text-[2.05rem] font-bold leading-none tracking-[-0.05em] text-white">
+                  {formatCurrency(primaryLoan.remainingAmount)}
+                </p>
+                <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-[#2f6bff] transition-all"
+                    style={{ width: `${progress}%` }}
                   />
                 </div>
-              </section>
-            </>
-          ) : (
-            <section className="rounded-[30px] bg-[#111315] p-6 text-center">
-              <p className="text-xl font-semibold">Tidak ada pinjaman aktif</p>
-              <p className="mt-2 text-sm leading-6 text-white/60">
-                Saat ini profile ini belum memiliki pinjaman yang sedang berjalan.
-              </p>
+                <div className="mt-3 flex items-center justify-between text-sm text-white/56">
+                  <span>Sudah dibayar {formatCurrency(primaryLoan.totalRepaidAmount)}</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <InfoCard
+                  label="Pinjaman Awal"
+                  value={formatCurrency(primaryLoan.principalAmount)}
+                />
+                <InfoCard
+                  label="Total + Bunga"
+                  value={formatCurrency(primaryLoan.totalTargetAmount)}
+                />
+                <InfoCard
+                  label="Mulai"
+                  value={formatDate(primaryLoan.startDate)}
+                />
+                <InfoCard label="Status" value={primaryLoan.status || 'Aktif'} />
+              </div>
             </section>
-          )}
-        </div>
+
+            <section className="mt-4 rounded-[30px] border border-white/8 bg-[#101113] p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/34">
+                    Peta Cicilan
+                  </p>
+                  <h3 className="mt-2 text-[1.45rem] font-bold tracking-[-0.03em] text-white">
+                    Status Setoran
+                  </h3>
+                </div>
+                <div className="rounded-[18px] border border-white/8 bg-[#16181b] px-3 py-2 text-right">
+                  <p className="text-[0.68rem] uppercase tracking-[0.18em] text-white/34">
+                    Terbayar
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-[#2f6bff]">
+                    {paidCount}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/58">
+                <Legend label="Sudah bayar" status="paid" />
+                <Legend label="Bolong" status="missed" />
+                <Legend label="Belum jatuh tempo" status="upcoming" />
+              </div>
+
+              <div className="mt-5 grid grid-cols-5 gap-2.5">
+                {slots.map((slot) => (
+                  <div
+                    key={slot.index}
+                    className={`rounded-[16px] border px-2 py-3 text-center ${getSlotStyles(
+                      slot.status
+                    )}`}
+                    title={`Cicilan ${slot.index} • ${formatDate(slot.dueDate)}`}
+                  >
+                    <p className="text-[0.66rem] font-medium opacity-75">
+                      #{slot.index}
+                    </p>
+                    <p className="mt-1 text-[1.02rem] font-bold leading-none">
+                      {slot.status === 'paid'
+                        ? 'OK'
+                        : slot.status === 'missed'
+                        ? 'X'
+                        : '-'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 grid grid-cols-3 gap-3">
+                <MiniStat label="Sudah Bayar" value={`${paidCount}`} />
+                <MiniStat label="Bolong" value={`${missedCount}`} />
+                <MiniStat label="Sisa Slot" value={`${upcomingCount}`} />
+              </div>
+            </section>
+          </>
+        ) : (
+          <section className="mt-4 rounded-[30px] border border-white/8 bg-[#101113] px-6 py-8 text-center">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-white/34">
+              Status Pinjaman
+            </p>
+            <p className="mt-3 text-[1.85rem] font-bold tracking-[-0.04em] text-white">
+              Tidak ada pinjaman aktif
+            </p>
+            <p className="mx-auto mt-3 max-w-[22rem] text-base leading-7 text-white/56">
+              Saat ini belum ada pinjaman yang sedang berjalan untuk profile ini.
+            </p>
+          </section>
+        )}
       </div>
     </div>
   );
 };
 
-const InfoCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-[24px] bg-black/25 px-4 py-4">
-    <p className="text-xs text-white/42">{label}</p>
-    <p className="mt-2 text-lg font-bold leading-tight">{value}</p>
+const SummaryCard: React.FC<{ value: string; label: string }> = ({ value, label }) => (
+  <div className="rounded-[24px] border border-white/8 bg-[#101113] px-4 py-4 text-center">
+    <p className="text-[1.85rem] font-bold leading-none tracking-[-0.04em] text-white">
+      {value}
+    </p>
+    <p className="mt-2 text-[0.78rem] text-white/54">{label}</p>
   </div>
 );
 
-const MiniStat: React.FC<{ label: string; value: string; accent: string }> = ({
-  label,
-  value,
-  accent,
-}) => (
-  <div className="rounded-[22px] bg-black/22 px-4 py-4 text-center">
-    <p className={`text-[1.7rem] font-bold leading-none ${accent}`}>{value}</p>
-    <p className="mt-2 text-xs text-white/60">{label}</p>
+const InfoCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-[22px] border border-white/8 bg-[#16181b] px-4 py-4">
+    <p className="text-[0.72rem] uppercase tracking-[0.16em] text-white/36">
+      {label}
+    </p>
+    <p className="mt-2 text-lg font-bold leading-tight text-white">{value}</p>
+  </div>
+);
+
+const MiniStat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-[22px] border border-white/8 bg-[#16181b] px-4 py-4 text-center">
+    <p className="text-[1.65rem] font-bold leading-none text-white">{value}</p>
+    <p className="mt-2 text-xs text-white/58">{label}</p>
   </div>
 );
 
@@ -580,7 +621,7 @@ const Legend: React.FC<{ label: string; status: InstallmentVisualStatus }> = ({
   status,
 }) => (
   <div className="inline-flex items-center gap-2">
-    <span className={`h-2.5 w-2.5 rounded-full ${getLegendColor(status)}`} />
+    <span className={`h-2.5 w-2.5 rounded-full ${getLegendStyles(status)}`} />
     <span>{label}</span>
   </div>
 );
