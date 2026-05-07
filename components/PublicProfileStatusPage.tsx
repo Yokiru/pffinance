@@ -26,12 +26,35 @@ type PublicRepayment = {
   transactionDate: string;
 };
 
+type PublicSavingsAccount = {
+  accountId: string;
+  accountName: string;
+  accountCode: string | null;
+  status: string;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  balance: number;
+  createdAt: string;
+};
+
+type PublicSavingsTransaction = {
+  transactionId: string;
+  accountId: string;
+  type: string;
+  amount: number;
+  paymentMethod: string;
+  description: string | null;
+  transactionDate: string;
+};
+
 type PublicProfilePayload = {
   profile: {
     profileId: string;
     fullName: string;
     phone: string | null;
     location: string | null;
+    businessCategory: string | null;
+    religion: string | null;
     photoUrl: string | null;
     status: string;
   };
@@ -42,6 +65,8 @@ type PublicProfilePayload = {
   };
   activeLoans: PublicLoan[];
   recentRepayments: PublicRepayment[];
+  activeSavings?: PublicSavingsAccount[];
+  recentSavingsTransactions?: PublicSavingsTransaction[];
 };
 
 type Props = {
@@ -339,6 +364,17 @@ const getRepaymentLabel = (loan: PublicLoan) => {
   return 'Harian';
 };
 
+const isSavingsWithdrawal = (type: string | null | undefined) =>
+  (type ?? '').toLowerCase() === 'withdrawal';
+
+const getSavingsTransactionLabel = (type: string | null | undefined) =>
+  isSavingsWithdrawal(type) ? 'Tarik' : 'Setor';
+
+const getSavingsTransactionStyles = (type: string | null | undefined) =>
+  isSavingsWithdrawal(type)
+    ? 'bg-[#2a1714] text-[#ff9c88]'
+    : 'bg-[#11231a] text-[#68e09a]';
+
 const getSlotStyles = (status: InstallmentVisualStatus) => {
   switch (status) {
     case 'paid':
@@ -411,6 +447,9 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+  const [selectedSavingsAccountId, setSelectedSavingsAccountId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     let mounted = true;
@@ -419,11 +458,14 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
       setLoading(true);
       setError(null);
 
-      const [statusResult, pointsResult] = await Promise.all([
+      const [statusResult, pointsResult, savingsResult] = await Promise.all([
         publicStatusSupabase.rpc('get_public_profile_status', {
           p_share_token: shareToken,
         }),
         publicStatusSupabase.rpc('get_public_profile_points_summary', {
+          p_share_token: shareToken,
+        }),
+        publicStatusSupabase.rpc('get_public_profile_savings_status', {
           p_share_token: shareToken,
         }),
       ]);
@@ -447,8 +489,20 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
         return;
       }
 
+      const savingsPayload = savingsResult.error
+        ? null
+        : (savingsResult.data as Pick<
+            PublicProfilePayload,
+            'activeSavings' | 'recentSavingsTransactions'
+          > | null);
+      const basePayload = payload as PublicProfilePayload;
       const mergedPayload: PublicProfilePayload = {
         ...(payload as PublicProfilePayload),
+        activeSavings: savingsPayload?.activeSavings ?? basePayload.activeSavings ?? [],
+        recentSavingsTransactions:
+          savingsPayload?.recentSavingsTransactions ??
+          basePayload.recentSavingsTransactions ??
+          [],
         pointsSummary:
           (pointsResult.data as PublicProfilePayload['pointsSummary']) ?? {
             profilePointsTotal: 0,
@@ -482,11 +536,51 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
     });
   }, [data?.activeLoans]);
 
+  useEffect(() => {
+    if (!data?.activeSavings?.length) {
+      setSelectedSavingsAccountId(null);
+      return;
+    }
+
+    setSelectedSavingsAccountId((current) => {
+      if (
+        current &&
+        data.activeSavings?.some((account) => account.accountId === current)
+      ) {
+        return current;
+      }
+      return data.activeSavings?.[0]?.accountId ?? null;
+    });
+  }, [data?.activeSavings]);
+
   const activeLoans = data?.activeLoans ?? [];
+  const activeSavings = data?.activeSavings ?? [];
   const primaryLoan =
     activeLoans.find((loan) => loan.loanId === selectedLoanId) ??
     activeLoans[0] ??
     null;
+  const primarySavings =
+    activeSavings.find(
+      (account) => account.accountId === selectedSavingsAccountId
+    ) ??
+    activeSavings[0] ??
+    null;
+  const totalSavingsBalance = activeSavings.reduce(
+    (sum, account) => sum + Number(account.balance || 0),
+    0
+  );
+  const totalSavingsDeposits = activeSavings.reduce(
+    (sum, account) => sum + Number(account.totalDeposits || 0),
+    0
+  );
+  const totalSavingsWithdrawals = activeSavings.reduce(
+    (sum, account) => sum + Number(account.totalWithdrawals || 0),
+    0
+  );
+  const savingsTransactions = (data?.recentSavingsTransactions ?? []).filter(
+    (transaction) =>
+      !primarySavings || transaction.accountId === primarySavings.accountId
+  );
   const slots = useMemo(
     () =>
       primaryLoan
@@ -551,6 +645,8 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
               <div className="mt-4 grid gap-2 text-sm text-white/70">
                 <IdentityRow label="Lokasi" value={profile.location || '-'} />
                 <IdentityRow label="Nomor" value={maskedPhone || '-'} />
+                <IdentityRow label="Kategori Usaha" value={profile.businessCategory || '-'} />
+                <IdentityRow label="Agama" value={profile.religion || '-'} />
               </div>
             </div>
           </div>
@@ -566,6 +662,138 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
             value={`${pointsSummary.activeLoanPoints}`}
             label="Poin Pinjaman"
           />
+        </section>
+
+        <section className="mt-4 rounded-3xl bg-[#111214] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-white/45">Tabungan</p>
+              <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.04em] text-white">
+                <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>
+                  {formatCurrency(totalSavingsBalance)}
+                </span>
+              </h2>
+              <p className="mt-1 text-sm text-white/55">
+                {activeSavings.length > 0
+                  ? `${activeSavings.length} akun aktif`
+                  : 'Tidak ada tabungan aktif'}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#18181b] px-3 py-2 text-right">
+              <p className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-white/40">
+                Saldo
+              </p>
+              <p className="mt-1 text-lg font-semibold text-[#68e09a]">
+                Aktif
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2.5">
+            <InfoCard
+              label="Total Setor"
+              value={formatCurrency(totalSavingsDeposits)}
+            />
+            <InfoCard
+              label="Total Tarik"
+              value={formatCurrency(totalSavingsWithdrawals)}
+            />
+          </div>
+
+          {activeSavings.length > 1 ? (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {activeSavings.map((account, index) => {
+                const selected = account.accountId === primarySavings?.accountId;
+                return (
+                  <button
+                    key={account.accountId}
+                    type="button"
+                    onClick={() =>
+                      setSelectedSavingsAccountId(account.accountId)
+                    }
+                    className={`rounded-2xl px-3 py-3 text-left transition ${
+                      selected
+                        ? 'bg-[#168047] text-white'
+                        : 'bg-[#18181b] text-white/80'
+                    }`}
+                  >
+                    <p className="text-[0.68rem] font-medium uppercase tracking-[0.14em] opacity-70">
+                      Tabungan {index + 1}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-semibold">
+                      {account.accountName || 'Tabungan aktif'}
+                    </p>
+                    <p className="mt-1 text-xs opacity-75">
+                      <span style={{ fontFamily: 'Outfit, Geist, sans-serif' }}>
+                        {formatCurrency(account.balance)}
+                      </span>
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {primarySavings ? (
+            <div className="mt-4 rounded-2xl bg-[#18181b] px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">
+                    {primarySavings.accountName || 'Tabungan aktif'}
+                  </p>
+                  <p className="mt-1 text-xs text-white/48">
+                    {primarySavings.accountCode?.trim() || 'Akun tabungan'}
+                  </p>
+                </div>
+                <p
+                  className="shrink-0 text-sm font-semibold text-[#68e09a]"
+                  style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
+                >
+                  {formatCurrency(primarySavings.balance)}
+                </p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-white/[0.04] px-3 py-3">
+                  <p className="text-[0.65rem] uppercase tracking-[0.14em] text-white/35">
+                    Setor
+                  </p>
+                  <p
+                    className="mt-1 text-sm font-semibold text-white"
+                    style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
+                  >
+                    {formatCurrency(primarySavings.totalDeposits)}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/[0.04] px-3 py-3">
+                  <p className="text-[0.65rem] uppercase tracking-[0.14em] text-white/35">
+                    Tarik
+                  </p>
+                  <p
+                    className="mt-1 text-sm font-semibold text-white"
+                    style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
+                  >
+                    {formatCurrency(primarySavings.totalWithdrawals)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2">
+                {savingsTransactions.length > 0 ? (
+                  savingsTransactions.map((transaction) => (
+                    <SavingsTransactionRow
+                      key={transaction.transactionId}
+                      transaction={transaction}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-xl bg-white/[0.04] px-3 py-4 text-center text-sm text-white/46">
+                    Belum ada riwayat tabungan.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         {primaryLoan ? (
@@ -772,6 +1000,44 @@ const InfoCard: React.FC<{ label: string; value: string }> = ({ label, value }) 
     </p>
   </div>
 );
+
+const SavingsTransactionRow: React.FC<{
+  transaction: PublicSavingsTransaction;
+}> = ({ transaction }) => {
+  const withdrawal = isSavingsWithdrawal(transaction.type);
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.04] px-3 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${getSavingsTransactionStyles(
+            transaction.type
+          )}`}
+        >
+          {withdrawal ? '-' : '+'}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white">
+            {getSavingsTransactionLabel(transaction.type)}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-white/45">
+            {formatShortDate(transaction.transactionDate)}
+            {transaction.paymentMethod ? ` - ${transaction.paymentMethod}` : ''}
+          </p>
+        </div>
+      </div>
+      <p
+        className={`shrink-0 text-sm font-semibold ${
+          withdrawal ? 'text-[#ff9c88]' : 'text-[#68e09a]'
+        }`}
+        style={{ fontFamily: 'Outfit, Geist, sans-serif' }}
+      >
+        {withdrawal ? '-' : '+'}
+        {formatCurrency(transaction.amount)}
+      </p>
+    </div>
+  );
+};
 
 const MiniStat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="rounded-[22px] border border-white/8 bg-[#16181b] px-4 py-4 text-center">
