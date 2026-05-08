@@ -225,7 +225,7 @@ const generateDueDates = (loan: PublicLoan) => {
     let slotDate = new Date(
       start.getFullYear(),
       start.getMonth(),
-      start.getDate() + 1
+      start.getDate() + 7
     );
     while (getDartWeekday(slotDate) !== targetWeekday) {
       slotDate = new Date(
