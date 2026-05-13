@@ -273,13 +273,6 @@ const countDueByToday = (dueDates: Date[]) => {
     .length;
 };
 
-const getCoveredSlotCount = (amount: number, installmentAmount: number) => {
-  if (amount <= 0) return 0;
-  if (installmentAmount <= 0) return 1;
-  const slots = Math.floor((amount + 0.01) / installmentAmount);
-  return Math.max(1, slots);
-};
-
 const buildInstallmentSlots = (
   loan: PublicLoan,
   repayments: PublicRepayment[]
@@ -296,11 +289,22 @@ const buildInstallmentSlots = (
     { amount: number; transactionDate: string }
   >();
 
+  let accumulatedAmount = 0;
   repaymentItems.forEach((repayment) => {
-    let slotCount = getCoveredSlotCount(repayment.amount, loan.installmentAmount);
     const paymentDay = startOfDay(new Date(repayment.transactionDate)).getTime();
+    accumulatedAmount += repayment.amount;
 
-    while (slotCount > 0 && paidSlotMap.size < dueDates.length) {
+    if (loan.installmentAmount <= 0) {
+      accumulatedAmount = 0;
+    } else if (accumulatedAmount + 0.01 < loan.installmentAmount) {
+      return;
+    }
+
+    while (
+      (loan.installmentAmount <= 0 ||
+        accumulatedAmount + 0.01 >= loan.installmentAmount) &&
+      paidSlotMap.size < dueDates.length
+    ) {
       let targetIndex = -1;
       for (let index = 0; index < dueDates.length; index += 1) {
         if (paidSlotMap.has(index)) continue;
@@ -312,12 +316,14 @@ const buildInstallmentSlots = (
 
       paidSlotMap.set(targetIndex, {
         amount:
-          slotCount > 1 && loan.installmentAmount > 0
+          accumulatedAmount > loan.installmentAmount && loan.installmentAmount > 0
             ? loan.installmentAmount
             : repayment.amount,
         transactionDate: repayment.transactionDate,
       });
-      slotCount -= 1;
+      if (loan.installmentAmount <= 0) break;
+      accumulatedAmount -= loan.installmentAmount;
+      if (accumulatedAmount < 0) accumulatedAmount = 0;
     }
   });
 
