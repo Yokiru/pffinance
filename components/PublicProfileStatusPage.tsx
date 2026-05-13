@@ -65,6 +65,7 @@ type PublicProfilePayload = {
   };
   activeLoans: PublicLoan[];
   recentRepayments: PublicRepayment[];
+  loanRepayments?: PublicRepayment[];
   activeSavings?: PublicSavingsAccount[];
   recentSavingsTransactions?: PublicSavingsTransaction[];
 };
@@ -272,28 +273,11 @@ const countDueByToday = (dueDates: Date[]) => {
     .length;
 };
 
-const findSlotIndexForRepayment = (dueDates: Date[], paymentDate: Date) => {
-  if (!dueDates.length) return -1;
-
-  const paymentDay = startOfDay(paymentDate).getTime();
-
-  if (paymentDay <= startOfDay(dueDates[0]).getTime()) {
-    return 0;
-  }
-
-  for (let index = 0; index < dueDates.length; index += 1) {
-    const currentDue = startOfDay(dueDates[index]).getTime();
-    const nextDue =
-      index + 1 < dueDates.length
-        ? startOfDay(dueDates[index + 1]).getTime()
-        : Number.POSITIVE_INFINITY;
-
-    if (paymentDay >= currentDue && paymentDay < nextDue) {
-      return index;
-    }
-  }
-
-  return dueDates.length - 1;
+const getCoveredSlotCount = (amount: number, installmentAmount: number) => {
+  if (amount <= 0) return 0;
+  if (installmentAmount <= 0) return 1;
+  const slots = Math.floor((amount + 0.01) / installmentAmount);
+  return Math.max(1, slots);
 };
 
 const buildInstallmentSlots = (
@@ -313,23 +297,27 @@ const buildInstallmentSlots = (
   >();
 
   repaymentItems.forEach((repayment) => {
-    const baseIndex = findSlotIndexForRepayment(
-      dueDates,
-      new Date(repayment.transactionDate)
-    );
+    let slotCount = getCoveredSlotCount(repayment.amount, loan.installmentAmount);
+    const paymentDay = startOfDay(new Date(repayment.transactionDate)).getTime();
 
-    if (baseIndex < 0) return;
+    while (slotCount > 0 && paidSlotMap.size < dueDates.length) {
+      let targetIndex = -1;
+      for (let index = 0; index < dueDates.length; index += 1) {
+        if (paidSlotMap.has(index)) continue;
+        if (startOfDay(dueDates[index]).getTime() < paymentDay) continue;
+        targetIndex = index;
+        break;
+      }
+      if (targetIndex < 0) break;
 
-    let targetIndex = baseIndex;
-    while (paidSlotMap.has(targetIndex) && targetIndex < dueDates.length - 1) {
-      targetIndex += 1;
-    }
-
-    if (!paidSlotMap.has(targetIndex)) {
       paidSlotMap.set(targetIndex, {
-        amount: repayment.amount,
+        amount:
+          slotCount > 1 && loan.installmentAmount > 0
+            ? loan.installmentAmount
+            : repayment.amount,
         transactionDate: repayment.transactionDate,
       });
+      slotCount -= 1;
     }
   });
 
@@ -458,7 +446,12 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
       setLoading(true);
       setError(null);
 
-      const [statusResult, pointsResult, savingsResult] = await Promise.all([
+      const [
+        statusResult,
+        pointsResult,
+        savingsResult,
+        loanRepaymentsResult,
+      ] = await Promise.all([
         publicStatusSupabase.rpc('get_public_profile_status', {
           p_share_token: shareToken,
         }),
@@ -466,6 +459,9 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
           p_share_token: shareToken,
         }),
         publicStatusSupabase.rpc('get_public_profile_savings_status', {
+          p_share_token: shareToken,
+        }),
+        publicStatusSupabase.rpc('get_public_profile_loan_repayments_status', {
           p_share_token: shareToken,
         }),
       ]);
@@ -495,9 +491,20 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
             PublicProfilePayload,
             'activeSavings' | 'recentSavingsTransactions'
           > | null);
+      const loanRepaymentsPayload = loanRepaymentsResult.error
+        ? null
+        : (loanRepaymentsResult.data as Pick<
+            PublicProfilePayload,
+            'loanRepayments'
+          > | null);
       const basePayload = payload as PublicProfilePayload;
       const mergedPayload: PublicProfilePayload = {
         ...(payload as PublicProfilePayload),
+        loanRepayments:
+          loanRepaymentsPayload?.loanRepayments ??
+          basePayload.loanRepayments ??
+          basePayload.recentRepayments ??
+          [],
         activeSavings: savingsPayload?.activeSavings ?? basePayload.activeSavings ?? [],
         recentSavingsTransactions:
           savingsPayload?.recentSavingsTransactions ??
@@ -584,9 +591,12 @@ const PublicProfileStatusPage: React.FC<Props> = ({ shareToken }) => {
   const slots = useMemo(
     () =>
       primaryLoan
-        ? buildInstallmentSlots(primaryLoan, data?.recentRepayments ?? [])
+        ? buildInstallmentSlots(
+            primaryLoan,
+            data?.loanRepayments ?? data?.recentRepayments ?? []
+          )
         : [],
-    [data?.recentRepayments, primaryLoan]
+    [data?.loanRepayments, data?.recentRepayments, primaryLoan]
   );
 
   if (loading) {
