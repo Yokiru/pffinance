@@ -546,12 +546,48 @@ const emptyRewardForm = (): RewardFormState => ({
 });
 
 const adminSidebarItems = [
-  { key: "overview", label: "Overview", icon: HouseIcon },
-  { key: "loans", label: "Pinjaman", icon: TrendingDownIcon },
-  { key: "savings", label: "Tabungan", icon: WalletCardsIcon },
-  { key: "customers", label: "Nasabah", icon: UsersIcon },
-  { key: "rewards", label: "Poin & Hadiah", icon: GiftIcon },
-  { key: "point-docs", label: "Dokumen Poin", icon: FileTextIcon },
+  {
+    key: "overview",
+    label: "Overview",
+    title: "Overview",
+    subtitle: "Ringkasan uang dan aktivitas utama.",
+    icon: HouseIcon,
+  },
+  {
+    key: "loans",
+    label: "Pinjaman",
+    title: "Portfolio Pinjaman",
+    subtitle: "Prioritas tagih dan sisa pinjaman.",
+    icon: TrendingDownIcon,
+  },
+  {
+    key: "savings",
+    label: "Tabungan",
+    title: "Portfolio Tabungan",
+    subtitle: "Saldo tabungan dan aktivitas akun.",
+    icon: WalletCardsIcon,
+  },
+  {
+    key: "customers",
+    label: "Nasabah",
+    title: "Nasabah",
+    subtitle: "Nilai bisnis, risiko, dan loyalitas.",
+    icon: UsersIcon,
+  },
+  {
+    key: "rewards",
+    label: "Poin & Hadiah",
+    title: "Poin & Hadiah",
+    subtitle: "Katalog hadiah dan nasabah siap klaim.",
+    icon: GiftIcon,
+  },
+  {
+    key: "point-docs",
+    label: "Dokumen Poin",
+    title: "Dokumen Poin",
+    subtitle: "Aturan dan referensi sistem poin.",
+    icon: FileTextIcon,
+  },
 ] as const;
 
 type AdminPanelPageProps = {
@@ -799,6 +835,10 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
     const tabStillExists = adminSidebarItems.some((item) => item.key === activeTab);
     if (!tabStillExists) setActiveTab("overview");
   }, [activeTab]);
+
+  const activePageMeta =
+    adminSidebarItems.find((item) => item.key === activeTab) ??
+    adminSidebarItems[0];
 
   const profileViewModels = useMemo<ProfileViewModel[]>(() => {
     const activeLoanIds = new Set(
@@ -1818,11 +1858,12 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-col gap-1">
               <h1 className="text-2xl font-semibold tracking-tight">
-                Dashboard Admin
+                {activePageMeta.title}
               </h1>
-              {adminEmail && (
-                <p className="text-sm text-muted-foreground">{adminEmail}</p>
-              )}
+              <p className="text-sm text-muted-foreground">
+                {activePageMeta.subtitle}
+                {adminEmail ? ` | ${adminEmail}` : ""}
+              </p>
             </div>
             <div className="flex gap-2">
             <Button
