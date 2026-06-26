@@ -1,5 +1,6 @@
 "use client"
 
+import type * as React from "react"
 import { useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -190,7 +191,7 @@ function FieldError({
       return null
     }
 
-    const uniqueErrors = [
+    const uniqueErrors: Array<{ message?: string }> = [
       ...new Map(errors.map((error) => [error?.message, error])).values(),
     ]
 

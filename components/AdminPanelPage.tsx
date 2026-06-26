@@ -547,6 +547,8 @@ const emptyRewardForm = (): RewardFormState => ({
 
 const adminSidebarItems = [
   { key: "overview", label: "Overview", icon: HouseIcon },
+  { key: "loans", label: "Pinjaman", icon: TrendingDownIcon },
+  { key: "savings", label: "Tabungan", icon: WalletCardsIcon },
   { key: "customers", label: "Nasabah", icon: UsersIcon },
   { key: "rewards", label: "Poin & Hadiah", icon: GiftIcon },
   { key: "point-docs", label: "Dokumen Poin", icon: FileTextIcon },
@@ -591,6 +593,9 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
   const [customerSegment, setCustomerSegment] = useState<
     "all" | "priority" | "points" | "savings" | "outstanding" | "risk"
   >("all");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
+    null
+  );
   const [activeTab, setActiveTab] = useState("overview");
   const [timeRange, setTimeRange] = useState("90d");
   const [visibleChartSeries, setVisibleChartSeries] = useState<
@@ -937,6 +942,175 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
     });
   }, [customerInsights, customerSegment, search]);
 
+  const selectedCustomerInsight = useMemo(
+    () =>
+      selectedCustomerId
+        ? customerInsights.find(
+            (insight) => insight.item.profile.id === selectedCustomerId
+          ) ?? null
+        : null,
+    [customerInsights, selectedCustomerId]
+  );
+
+  const selectedCustomerActivities = useMemo<MoneyActivity[]>(() => {
+    if (!selectedCustomerInsight) return [];
+
+    const profileId = selectedCustomerInsight.item.profile.id;
+    const savingsAccountIds = new Set(
+      selectedCustomerInsight.item.activeSavings.map((account) => account.id)
+    );
+    const activities: MoneyActivity[] = [];
+
+    loanTransactions
+      .filter((transaction) => transaction.profile_id === profileId)
+      .forEach((transaction) => {
+        if (
+          !isRepaymentTransaction(transaction.type) &&
+          !isLoanDisbursement(transaction.type)
+        ) {
+          return;
+        }
+
+        activities.push({
+          id: `loan-detail-${transaction.id}`,
+          title: isLoanDisbursement(transaction.type)
+            ? "Pinjaman Keluar"
+            : "Tagihan Masuk",
+          detail: paymentLabel(transaction.payment_method),
+          amount: transaction.amount,
+          direction: isLoanDisbursement(transaction.type) ? "out" : "in",
+          kind: isLoanDisbursement(transaction.type) ? "loan_out" : "repayment",
+          date: transaction.transaction_date,
+          method: transaction.payment_method,
+        });
+      });
+
+    savingsTransactions
+      .filter((transaction) => {
+        const accountId = transaction.savings_account_id;
+        return (
+          transaction.profile_id === profileId ||
+          (accountId ? savingsAccountIds.has(accountId) : false)
+        );
+      })
+      .forEach((transaction) => {
+        const isOut = isSavingsWithdrawal(transaction.type);
+        activities.push({
+          id: `savings-detail-${transaction.id}`,
+          title: isOut ? "Tarik Tabungan" : "Tabungan Masuk",
+          detail: paymentLabel(transaction.payment_method),
+          amount: transaction.amount,
+          direction: isOut ? "out" : "in",
+          kind: isOut ? "savings_out" : "savings_in",
+          date: transaction.transaction_date,
+          method: transaction.payment_method,
+        });
+      });
+
+    return activities
+      .sort(
+        (left, right) =>
+          new Date(right.date).getTime() - new Date(left.date).getTime()
+      )
+      .slice(0, 8);
+  }, [loanTransactions, savingsTransactions, selectedCustomerInsight]);
+
+  const loanPortfolio = useMemo(() => {
+    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+
+    return loans
+      .map((loan) => {
+        const target =
+          (loan.installment_amount_snapshot ?? 0) * (loan.installments ?? 0);
+        const repayments = loanTransactions.filter(
+          (transaction) =>
+            transaction.loan_id === loan.id &&
+            isRepaymentTransaction(transaction.type)
+        );
+        const paid = sumAmount(repayments);
+        const outstanding = Math.max(target - paid, 0);
+        const expectedProfit = Math.max(target - (loan.principal_amount ?? 0), 0);
+        const progress = target > 0 ? paid / target : 0;
+        const profile = profileById.get(loan.profile_id);
+
+        return {
+          loan,
+          profile,
+          target,
+          paid,
+          outstanding,
+          expectedProfit,
+          progress,
+          risk:
+            loan.status === "active" && outstanding > 0 && paid === 0
+              ? "Pantau"
+              : loan.status === "active" && outstanding >= 10000000
+              ? "Prioritas"
+              : "Aman",
+        };
+      })
+      .sort((left, right) => {
+        if (left.loan.status !== right.loan.status) {
+          return left.loan.status === "active" ? -1 : 1;
+        }
+        return right.outstanding - left.outstanding;
+      });
+  }, [loanTransactions, loans, profiles]);
+
+  const savingsPortfolio = useMemo(() => {
+    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+
+    return savingsAccounts
+      .map((account) => {
+        const transactions = savingsTransactions.filter(
+          (transaction) =>
+            transaction.savings_account_id === account.id ||
+            (!transaction.savings_account_id &&
+              transaction.profile_id === account.profile_id)
+        );
+        const deposits = transactions
+          .filter((transaction) => isSavingsDeposit(transaction.type))
+          .reduce((sum, transaction) => sum + transaction.amount, 0);
+        const withdrawals = transactions
+          .filter((transaction) => isSavingsWithdrawal(transaction.type))
+          .reduce((sum, transaction) => sum + transaction.amount, 0);
+
+        return {
+          account,
+          profile: profileById.get(account.profile_id),
+          deposits,
+          withdrawals,
+          balance: deposits - withdrawals,
+          transactions: transactions.length,
+        };
+      })
+      .sort((left, right) => right.balance - left.balance);
+  }, [profiles, savingsAccounts, savingsTransactions]);
+
+  const rewardCandidates = useMemo(() => {
+    const activeRewards = rewards
+      .filter((reward) => reward.is_active)
+      .sort((left, right) => left.points_cost - right.points_cost);
+
+    return customerInsights
+      .map((insight) => {
+        const availableRewards = activeRewards.filter((reward) => {
+          const points =
+            reward.point_source === "profile"
+              ? insight.item.profilePoints
+              : insight.item.activeLoanPoints;
+          return points >= reward.points_cost;
+        });
+
+        return {
+          insight,
+          availableRewards,
+        };
+      })
+      .filter((item) => item.availableRewards.length > 0)
+      .sort((left, right) => right.insight.totalPoints - left.insight.totalPoints);
+  }, [customerInsights, rewards]);
+
   const analyticsData = useMemo<AnalyticsRow[]>(() => {
     const rows = new Map<string, AnalyticsRow>();
     for (let offset = 89; offset >= 0; offset -= 1) {
@@ -1001,6 +1175,9 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
       return true;
     };
     const activeLoans = loans.filter((loan) => loan.status === "active");
+    const loanById = new Map<string, LoanRecord>(
+      loans.map((loan) => [loan.id, loan])
+    );
     const rangeLoans = loans.filter((loan) => isWithinSummaryRange(loan.start_date));
     const rangeLoanTransactions = loanTransactions.filter(
       (item) => isWithinSummaryRange(item.transaction_date)
@@ -1114,6 +1291,34 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
         .reduce((total, item) => total + item.amount, 0);
       return sum + Math.max(totalTarget - paid, 0);
     }, 0);
+    const profitFromRepayments = rangeRepayments.reduce((sum, transaction) => {
+      if (!transaction.loan_id) return sum;
+      const loan = loanById.get(transaction.loan_id);
+      if (!loan) return sum;
+      const target =
+        (loan.installment_amount_snapshot ?? 0) * (loan.installments ?? 0);
+      if (target <= 0) return sum;
+      const expectedProfit = Math.max(target - (loan.principal_amount ?? 0), 0);
+      return sum + transaction.amount * (expectedProfit / target);
+    }, 0);
+    const principalRecovered = rangeRepayments.reduce((sum, transaction) => {
+      if (!transaction.loan_id) return sum;
+      const loan = loanById.get(transaction.loan_id);
+      if (!loan) return sum;
+      const target =
+        (loan.installment_amount_snapshot ?? 0) * (loan.installments ?? 0);
+      if (target <= 0) return sum;
+      return sum + transaction.amount * ((loan.principal_amount ?? 0) / target);
+    }, 0);
+    const expectedActiveProfit = activeLoans.reduce((sum, loan) => {
+      const target =
+        (loan.installment_amount_snapshot ?? 0) * (loan.installments ?? 0);
+      return sum + Math.max(target - (loan.principal_amount ?? 0), 0);
+    }, 0);
+    const activePrincipal = activeLoans.reduce(
+      (sum, loan) => sum + (loan.principal_amount ?? 0),
+      0
+    );
 
     return {
       totalLoanOut,
@@ -1124,6 +1329,14 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
       businessCashBalance:
         allRepayments + allSavingsIn + allLedgerIn - allLoanOut - allSavingsOut - allLedgerOut,
       totalOutstanding,
+      realizedProfit: profitFromRepayments,
+      principalRecovered,
+      expectedActiveProfit,
+      activePrincipal,
+      collectionRate:
+        totalOutstanding + totalRepayments > 0
+          ? totalRepayments / (totalOutstanding + totalRepayments)
+          : 0,
       cashIn,
       bankIn,
       nonCashIn,
@@ -1152,7 +1365,7 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
   ]);
 
   const recentMoneyActivities = useMemo<MoneyActivity[]>(() => {
-    const profileNameById = new Map(
+    const profileNameById = new Map<string, string>(
       profiles.map((profile) => [profile.id, profile.full_name])
     );
     const activities: MoneyActivity[] = [];
@@ -1566,13 +1779,12 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => !item.disabled && setActiveTab(item.key)}
+                    onClick={() => setActiveTab(item.key)}
                     className={cn(
                       "mx-auto flex h-10 w-10 items-center justify-center gap-0 overflow-hidden rounded-xl px-0 text-left transition-all duration-200 group-hover:mx-0 group-hover:h-11 group-hover:w-full group-hover:justify-start group-hover:gap-3 group-hover:rounded-2xl group-hover:px-3",
                       isActive
                         ? "text-foreground group-hover:bg-secondary group-hover:text-secondary-foreground"
                         : "text-muted-foreground hover:text-foreground group-hover:hover:bg-muted/60",
-                      item.disabled && "cursor-not-allowed opacity-45"
                     )}
                   >
                     <div className="flex size-5 shrink-0 items-center justify-center">
@@ -1676,59 +1888,56 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
                 </div>
               </div>
 
-              <BusinessCashCard
-                balance={formatCurrency(summary.businessCashBalance)}
-                amount={businessCashAmount}
-                note={businessCashNote}
-                ready={businessCashReady}
-                saving={savingBusinessCash}
-                onAmountChange={setBusinessCashAmount}
-                onNoteChange={setBusinessCashNote}
-                onAdjust={handleBusinessCashAdjust}
-              />
-
               <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))]">
                 <SummaryCard
-                  title="Kas"
+                  title="Cash Di Tangan"
                   value={formatCompactCurrency(summary.cashBalance)}
-                  description="Cash tersedia"
+                  description={
+                    summary.cashBalance < 0
+                      ? "Minus: cek saldo awal cash"
+                      : "Cocokkan dengan uang fisik"
+                  }
                   icon={WalletIcon}
                   tone="cash"
                 />
                 <SummaryCard
-                  title="Bank"
+                  title="Saldo Bank"
                   value={formatCompactCurrency(summary.bankBalance)}
-                  description="Rekening tersedia"
+                  description={
+                    summary.bankBalance < 0
+                      ? "Minus: cek saldo awal bank"
+                      : "Cocokkan dengan rekening"
+                  }
                   icon={BanknoteIcon}
                   tone="bank"
                 />
                 <SummaryCard
-                  title="Tagihan"
+                  title="Uang Masuk"
                   value={formatCompactCurrency(summary.totalRepayments)}
-                  description="Masuk periode ini"
+                  description="Tagihan/cicilan masuk"
                   icon={WalletCardsIcon}
                   tone="cash"
                 />
                 <SummaryCard
-                  title="Keluar"
+                  title="Uang Keluar"
                   value={formatCompactCurrency(summary.totalLoanOut + summary.totalSavingsOut)}
                   description="Pinjaman + tarik"
                   icon={TrendingDownIcon}
                   tone="danger"
                 />
                 <SummaryCard
-                  title="Outstanding"
+                  title="Sisa Tagihan"
                   value={formatCompactCurrency(summary.totalOutstanding)}
-                  description={`${summary.activeLoansCount} pinjaman aktif`}
+                  description={`Belum tertagih dari ${summary.activeLoansCount} pinjaman`}
                   icon={ArrowUpDownIcon}
                   tone="warning"
                 />
                 <SummaryCard
-                  title="Siap Putar"
-                  value={formatCompactCurrency(summary.readyToRotate)}
-                  description="Setelah saldo tabungan"
-                  icon={TrendingUpIcon}
-                  tone="primary"
+                  title="Saldo Tabungan"
+                  value={formatCompactCurrency(summary.savingsBalance)}
+                  description="Uang titipan nasabah"
+                  icon={WalletCardsIcon}
+                  tone="warning"
                 />
               </div>
 
@@ -1875,25 +2084,36 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Split Dana</CardTitle>
-                    <CardDescription>Cash dan bank.</CardDescription>
+                    <CardTitle>Rincian Uang</CardTitle>
+                    <CardDescription>Masuk dan keluar periode ini.</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="grid gap-3">
-                      <MoneyRow label="Cash Masuk" value={formatCurrency(summary.cashIn)} tone="cash" />
-                      <MoneyRow label="Cash Keluar" value={formatCurrency(summary.cashOut)} tone="danger" />
-                      <MoneyRow label="Bank Masuk" value={formatCurrency(summary.bankIn)} tone="bank" />
-                      <MoneyRow label="Bank Keluar" value={formatCurrency(summary.bankOut)} tone="danger" />
+                      <MoneyRow label="Cash masuk" value={formatCurrency(summary.cashIn)} tone="cash" />
+                      <MoneyRow label="Cash keluar" value={formatCurrency(summary.cashOut)} tone="danger" />
+                      <MoneyRow label="Bank masuk" value={formatCurrency(summary.bankIn)} tone="bank" />
+                      <MoneyRow label="Bank keluar" value={formatCurrency(summary.bankOut)} tone="danger" />
                       {summary.nonCashMovement !== 0 && (
                         <MoneyRow label="Non-Cash" value={formatCurrency(summary.nonCashMovement)} tone="neutral" />
                       )}
                       <Separator />
-                      <MoneyRow label="Saldo Tabungan" value={formatCurrency(summary.savingsBalance)} tone="warning" />
-                      <MoneyRow label="Saldo Bisnis" value={formatCurrency(summary.businessCashBalance)} tone="primary" />
+                      <MoneyRow label="Estimasi bunga masuk" value={formatCurrency(summary.realizedProfit)} tone="primary" />
+                      <MoneyRow label="Arus bersih" value={formatCurrency(summary.netMovement)} tone={summary.netMovement >= 0 ? "cash" : "danger"} />
                     </div>
                   </CardContent>
                 </Card>
               </div>
+
+              <BusinessCashCard
+                balance={formatCurrency(summary.businessCashBalance)}
+                amount={businessCashAmount}
+                note={businessCashNote}
+                ready={businessCashReady}
+                saving={savingBusinessCash}
+                onAmountChange={setBusinessCashAmount}
+                onNoteChange={setBusinessCashNote}
+                onAdjust={handleBusinessCashAdjust}
+              />
 
               <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
                 <Card>
@@ -2022,6 +2242,193 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
                 </CardContent>
               </Card>
             </div>}
+            </div>
+          )}
+
+          {activeTab === "loans" && (
+            <div className="flex flex-col gap-6">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
+                <SummaryCard
+                  title="Aktif"
+                  value={`${summary.activeLoansCount}`}
+                  description="Pinjaman berjalan"
+                  icon={TrendingDownIcon}
+                  tone="neutral"
+                />
+                <SummaryCard
+                  title="Outstanding"
+                  value={formatCompactCurrency(summary.totalOutstanding)}
+                  description="Sisa tagihan aktif"
+                  icon={ArrowUpDownIcon}
+                  tone="warning"
+                />
+                <SummaryCard
+                  title="Modal Aktif"
+                  value={formatCompactCurrency(summary.activePrincipal)}
+                  description="Principal berjalan"
+                  icon={WalletIcon}
+                  tone="danger"
+                />
+                <SummaryCard
+                  title="Profit Aktif"
+                  value={formatCompactCurrency(summary.expectedActiveProfit)}
+                  description="Bunga belum selesai"
+                  icon={TrendingUpIcon}
+                  tone="primary"
+                />
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Portfolio Pinjaman</CardTitle>
+                  <CardDescription>Prioritas tagih dan sisa pinjaman.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nasabah</TableHead>
+                        <TableHead>Pinjaman</TableHead>
+                        <TableHead>Terbayar</TableHead>
+                        <TableHead>Sisa</TableHead>
+                        <TableHead>Progress</TableHead>
+                        <TableHead>Risiko</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loanPortfolio.slice(0, 80).map((row) => (
+                        <TableRow key={row.loan.id}>
+                          <TableCell>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCustomerId(row.loan.profile_id)}
+                              className="text-left"
+                            >
+                              <span className="block font-medium">
+                                {row.profile?.full_name ?? "Nasabah"}
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {row.profile?.location ?? "Tanpa lokasi"}
+                              </span>
+                            </button>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span>{formatCompactCurrency(row.loan.principal_amount)}</span>
+                              <span className="text-sm text-muted-foreground">
+                                Target {formatCompactCurrency(row.target)}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatCompactCurrency(row.paid)}</TableCell>
+                          <TableCell>
+                            <span className={row.outstanding > 0 ? "font-semibold text-[var(--pf-warning)]" : "text-muted-foreground"}>
+                              {formatCompactCurrency(row.outstanding)}
+                            </span>
+                          </TableCell>
+                          <TableCell>{Math.round(row.progress * 100)}%</TableCell>
+                          <TableCell>
+                            <Badge variant={row.risk === "Aman" ? "outline" : "destructive"}>
+                              {row.risk}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {activeTab === "savings" && (
+            <div className="flex flex-col gap-6">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
+                <SummaryCard
+                  title="Akun Aktif"
+                  value={`${summary.activeSavingsCount}`}
+                  description="Rekening tabungan"
+                  icon={WalletCardsIcon}
+                  tone="neutral"
+                />
+                <SummaryCard
+                  title="Saldo"
+                  value={formatCompactCurrency(summary.savingsBalance)}
+                  description="Kewajiban tabungan"
+                  icon={BanknoteIcon}
+                  tone="warning"
+                />
+                <SummaryCard
+                  title="Masuk"
+                  value={formatCompactCurrency(summary.totalSavingsIn)}
+                  description="Periode ini"
+                  icon={TrendingUpIcon}
+                  tone="bank"
+                />
+                <SummaryCard
+                  title="Keluar"
+                  value={formatCompactCurrency(summary.totalSavingsOut)}
+                  description="Tarik periode ini"
+                  icon={TrendingDownIcon}
+                  tone="danger"
+                />
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Portfolio Tabungan</CardTitle>
+                  <CardDescription>Saldo dan aktivitas akun nasabah.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nasabah</TableHead>
+                        <TableHead>Akun</TableHead>
+                        <TableHead>Masuk</TableHead>
+                        <TableHead>Keluar</TableHead>
+                        <TableHead>Saldo</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {savingsPortfolio.slice(0, 80).map((row) => (
+                        <TableRow key={row.account.id}>
+                          <TableCell>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCustomerId(row.account.profile_id)}
+                              className="text-left"
+                            >
+                              <span className="block font-medium">
+                                {row.profile?.full_name ?? "Nasabah"}
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {row.profile?.location ?? "Tanpa lokasi"}
+                              </span>
+                            </button>
+                          </TableCell>
+                          <TableCell>{row.account.account_name}</TableCell>
+                          <TableCell className="text-[var(--pf-bank)]">
+                            {formatCompactCurrency(row.deposits)}
+                          </TableCell>
+                          <TableCell className="text-[var(--pf-danger)]">
+                            {formatCompactCurrency(row.withdrawals)}
+                          </TableCell>
+                          <TableCell className="font-semibold">
+                            {formatCompactCurrency(row.balance)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={statusBadgeVariant(row.account.status)}>
+                              {row.account.status === "active" ? "Aktif" : row.account.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -2201,6 +2608,12 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                  onClick={() => setSelectedCustomerId(item.profile.id)}
+                                >
+                                  <FileTextIcon />
+                                  Lihat Detail
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openProfileEditor(item)}>
                                   <PencilLineIcon />
                                   Edit Nasabah
@@ -2229,6 +2642,30 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
 
           {activeTab === "rewards" && (
             <div className="flex flex-col gap-6">
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
+              <SummaryCard
+                title="Hadiah"
+                value={`${rewards.filter((reward) => reward.is_active).length}`}
+                description="Katalog aktif"
+                icon={GiftIcon}
+                tone="warning"
+              />
+              <SummaryCard
+                title="Siap Klaim"
+                value={`${rewardCandidates.length}`}
+                description="Nasabah memenuhi poin"
+                icon={UsersIcon}
+                tone="primary"
+              />
+              <SummaryCard
+                title="Poin"
+                value={`${customerInsights.reduce((sum, item) => sum + item.totalPoints, 0)}`}
+                description="Total beredar"
+                icon={BadgePlusIcon}
+                tone="cash"
+              />
+            </div>
+
             <Card>
               <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div className="flex flex-col gap-1">
@@ -2255,7 +2692,7 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
                 )}
 
                 {rewardCatalogReady && (
-                  rewards.isEmpty ? (
+                  rewards.length === 0 ? (
                     <Alert>
                       <GiftIcon />
                       <AlertTitle>Hadiah masih kosong</AlertTitle>
@@ -2320,274 +2757,279 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Nasabah Siap Klaim</CardTitle>
+                <CardDescription>Retensi dari poin yang sudah cukup.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {rewardCandidates.length === 0 ? (
+                  <div className="rounded-lg border bg-background px-4 py-6 text-sm text-muted-foreground">
+                    Belum ada nasabah yang memenuhi hadiah aktif.
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    {rewardCandidates.slice(0, 12).map(({ insight, availableRewards }) => (
+                      <div
+                        key={insight.item.profile.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-3"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCustomerId(insight.item.profile.id)}
+                          className="min-w-0 text-left"
+                        >
+                          <p className="truncate text-sm font-semibold">
+                            {insight.item.profile.full_name}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {insight.totalPoints} poin | LVL {insight.item.level}
+                          </p>
+                        </button>
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          {availableRewards.slice(0, 3).map((reward) => (
+                            <Badge key={reward.id} variant="secondary">
+                              {reward.title}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
             </div>
           )}
 
           {activeTab === "point-docs" && <PointSystemDocsPage />}
 
-          {activeTab === "analytics" && (
-            <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-col gap-1">
-                  <span className="text-lg font-semibold tracking-tight">Cashflow</span>
-                  <span className="text-sm text-muted-foreground">
-                    Uang masuk, keluar, dan sumber dana.
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    aria-label="Tanggal mulai cashflow"
-                    type="date"
-                    value={summaryStartDate}
-                    onChange={(event) => setSummaryStartDate(event.target.value)}
-                    className="h-8 sm:w-[160px]"
-                  />
-                  <Input
-                    aria-label="Tanggal sampai cashflow"
-                    type="date"
-                    value={summaryEndDate}
-                    onChange={(event) => setSummaryEndDate(event.target.value)}
-                    className="h-8 sm:w-[160px]"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSummaryStartDate("");
-                      setSummaryEndDate("");
-                    }}
-                  >
-                    Semua
-                  </Button>
-                </div>
-              </div>
+        </div>
+      </div>
 
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))]">
-                <SummaryCard
-                  title="Cash Masuk"
-                  value={formatCompactCurrency(summary.cashIn)}
-                  description="Tagihan + tabungan"
-                  icon={WalletIcon}
+      <Dialog
+        open={!!selectedCustomerInsight}
+        onOpenChange={(open) => !open && setSelectedCustomerId(null)}
+      >
+        <DialogContent className="sm:max-w-4xl">
+          {selectedCustomerInsight && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {selectedCustomerInsight.item.profile.full_name}
+                </DialogTitle>
+                <DialogDescription>
+                  {[
+                    selectedCustomerInsight.item.profile.location,
+                    selectedCustomerInsight.item.profile.business_category,
+                  ]
+                    .filter(Boolean)
+                    .join(" | ") || "Ringkasan operasional nasabah"}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                <MoneyRow
+                  label="Outstanding"
+                  value={formatCompactCurrency(selectedCustomerInsight.outstanding)}
+                  tone="warning"
+                />
+                <MoneyRow
+                  label="Terbayar"
+                  value={formatCompactCurrency(selectedCustomerInsight.paid)}
                   tone="cash"
                 />
-                <SummaryCard
-                  title="Cash Keluar"
-                  value={formatCompactCurrency(summary.cashOut)}
-                  description="Pencairan + tarik"
-                  icon={TrendingDownIcon}
-                  tone="danger"
-                />
-                <SummaryCard
-                  title="Bank Masuk"
-                  value={formatCompactCurrency(summary.bankIn)}
-                  description="Transfer masuk"
-                  icon={BanknoteIcon}
+                <MoneyRow
+                  label="Tabungan"
+                  value={formatCompactCurrency(selectedCustomerInsight.savingsBalance)}
                   tone="bank"
                 />
-                <SummaryCard
-                  title="Bank Keluar"
-                  value={formatCompactCurrency(summary.bankOut)}
-                  description="Transfer keluar"
-                  icon={ArrowUpDownIcon}
-                  tone="danger"
-                />
-                <SummaryCard
-                  title="Net"
-                  value={formatCompactCurrency(summary.netMovement)}
-                  description="Cash + bank"
-                  icon={TrendingUpIcon}
+                <MoneyRow
+                  label="Poin"
+                  value={`${selectedCustomerInsight.totalPoints} poin`}
                   tone="primary"
                 />
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-              <Card>
-                <CardHeader className="flex items-center gap-2 space-y-0 border-b py-4 sm:flex-row">
-                  <div className="grid flex-1 gap-1">
-                    <CardTitle>Tren Arus Uang</CardTitle>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {(
-                        [
-                          ["repayments", "Tagihan"],
-                          ["loanOut", "Pinjaman"],
-                          ["savingsIn", "Tabungan"],
-                          ["savingsOut", "Tarik"],
-                        ] as const
-                      ).map(([key, label]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() =>
-                            setVisibleChartSeries((current) => ({
-                              ...current,
-                              [key]: !current[key],
-                            }))
-                          }
-                          className={cn(
-                            "h-7 rounded-lg border px-2.5 text-xs font-medium transition-colors",
-                            chartPillClass(key, visibleChartSeries[key])
-                          )}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <Select value={timeRange} onValueChange={setTimeRange}>
-                    <SelectTrigger
-                      className="hidden h-8 w-[140px] rounded-lg sm:ml-auto sm:flex"
-                      aria-label="Pilih rentang waktu cashflow"
-                    >
-                      <SelectValue placeholder="90 hari" />
-                    </SelectTrigger>
-                    <SelectContent className="dark rounded-lg border-border bg-popover text-popover-foreground">
-                      <SelectGroup>
-                        <SelectItem value="90d">90 Hari</SelectItem>
-                        <SelectItem value="30d">30 Hari</SelectItem>
-                        <SelectItem value="7d">7 Hari</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </CardHeader>
-                <CardContent className="px-2 pt-4 sm:px-4">
-                  <ChartContainer config={chartConfig} className="aspect-auto h-[320px] w-full">
-                    <AreaChart data={filteredAnalyticsData}>
-                      <defs>
-                        <linearGradient id="analyticsFillRepayments" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-repayments)" stopOpacity={0.42} />
-                          <stop offset="95%" stopColor="var(--color-repayments)" stopOpacity={0.02} />
-                        </linearGradient>
-                        <linearGradient id="analyticsFillLoanOut" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-loanOut)" stopOpacity={0.24} />
-                          <stop offset="95%" stopColor="var(--color-loanOut)" stopOpacity={0.02} />
-                        </linearGradient>
-                        <linearGradient id="analyticsFillSavingsIn" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-savingsIn)" stopOpacity={0.22} />
-                          <stop offset="95%" stopColor="var(--color-savingsIn)" stopOpacity={0.02} />
-                        </linearGradient>
-                        <linearGradient id="analyticsFillSavingsOut" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-savingsOut)" stopOpacity={0.2} />
-                          <stop offset="95%" stopColor="var(--color-savingsOut)" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
-                      <XAxis
-                        dataKey="date"
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        minTickGap={32}
-                        tickFormatter={(value) =>
-                          new Date(value).toLocaleDateString("id-ID", {
-                            month: "short",
-                            day: "numeric",
-                          })
-                        }
-                      />
-                      <YAxis
-                        tickFormatter={(value) =>
-                          value >= 1000000
-                            ? `${Math.round(value / 1000000)}jt`
-                            : `${Math.round(value / 1000)}rb`
-                        }
-                        tickLine={false}
-                        axisLine={false}
-                        width={56}
-                      />
-                      <ChartTooltip
-                        cursor={false}
-                        content={
-                          <ChartTooltipContent
-                            labelFormatter={(value) =>
-                              new Date(String(value)).toLocaleDateString("id-ID", {
-                                month: "short",
-                                day: "numeric",
-                              })
-                            }
-                            indicator="dot"
-                            formatter={(value, name) => (
-                              <div className="flex w-full items-center justify-between gap-3">
-                                <span className="text-muted-foreground">
-                                  {name === "repayments"
-                                    ? "Tagihan"
-                                    : name === "loanOut"
-                                    ? "Pinjaman"
-                                    : name === "savingsIn"
-                                    ? "Tabungan"
-                                    : "Tarik"}
-                                </span>
-                                <span className="font-medium text-foreground">
-                                  {formatCurrency(Number(value))}
-                                </span>
-                              </div>
-                            )}
-                        />
-                      }
-                    />
-                      {visibleChartSeries.repayments && (
-                        <Area dataKey="repayments" type="monotone" fill="url(#analyticsFillRepayments)" stroke="var(--color-repayments)" strokeWidth={2} />
-                      )}
-                      {visibleChartSeries.loanOut && (
-                        <Area dataKey="loanOut" type="monotone" fill="url(#analyticsFillLoanOut)" stroke="var(--color-loanOut)" strokeWidth={2} />
-                      )}
-                      {visibleChartSeries.savingsIn && (
-                        <Area dataKey="savingsIn" type="monotone" fill="url(#analyticsFillSavingsIn)" stroke="var(--color-savingsIn)" strokeWidth={2} />
-                      )}
-                      {visibleChartSeries.savingsOut && (
-                        <Area dataKey="savingsOut" type="monotone" fill="url(#analyticsFillSavingsOut)" stroke="var(--color-savingsOut)" strokeWidth={2} />
-                      )}
-                    </AreaChart>
-                  </ChartContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Posisi Dana</CardTitle>
-                  <CardDescription>Saldo dan pergerakan.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-3">
-                    <MoneyRow label="Cash Tersedia" value={formatCompactCurrency(summary.cashBalance)} tone="cash" />
-                    <MoneyRow label="Bank Tersedia" value={formatCompactCurrency(summary.bankBalance)} tone="bank" />
-                    <MoneyRow label="Net Movement" value={formatCompactCurrency(summary.netMovement)} tone="primary" />
-                    <Separator />
-                    <MoneyRow label="Tagihan Masuk" value={formatCompactCurrency(summary.totalRepayments)} tone="cash" />
-                    <MoneyRow label="Pinjaman Keluar" value={formatCompactCurrency(summary.totalLoanOut)} tone="danger" />
-                    <MoneyRow label="Tabungan Masuk" value={formatCompactCurrency(summary.totalSavingsIn)} tone="bank" />
-                    <MoneyRow label="Tabungan Keluar" value={formatCompactCurrency(summary.totalSavingsOut)} tone="warning" />
-                  </div>
-                </CardContent>
-              </Card>
-              </div>
-
-              <Card>
-                <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <CardTitle>Ledger Cashflow</CardTitle>
-                    <CardDescription>Transaksi uang terbaru dengan sumber dana.</CardDescription>
-                  </div>
-                  <Badge variant="outline">{recentMoneyActivities.length} transaksi</Badge>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-2">
-                    {recentMoneyActivities.length === 0 ? (
-                      <div className="rounded-lg border bg-background px-4 py-6 text-sm text-muted-foreground">
-                        Belum ada aktivitas uang.
-                      </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Pinjaman</CardTitle>
+                    <CardDescription>
+                      Aktif dan arsip pinjaman nasabah.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex max-h-[320px] flex-col gap-3 overflow-auto">
+                    {[
+                      ...selectedCustomerInsight.item.activeLoans,
+                      ...selectedCustomerInsight.item.archivedLoans,
+                    ].length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Belum ada pinjaman.
+                      </p>
                     ) : (
-                      recentMoneyActivities.map((activity) => (
-                        <MoneyActivityRow key={activity.id} activity={activity} />
+                      [
+                        ...selectedCustomerInsight.item.activeLoans,
+                        ...selectedCustomerInsight.item.archivedLoans,
+                      ].map((loan) => {
+                        const target =
+                          (loan.installment_amount_snapshot ?? 0) *
+                          (loan.installments ?? 0);
+                        const paid = loanTransactions
+                          .filter(
+                            (transaction) =>
+                              transaction.loan_id === loan.id &&
+                              isRepaymentTransaction(transaction.type)
+                          )
+                          .reduce(
+                            (total, transaction) => total + transaction.amount,
+                            0
+                          );
+                        const remaining = Math.max(target - paid, 0);
+
+                        return (
+                          <div
+                            key={loan.id}
+                            className="rounded-lg border bg-background/60 px-3 py-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium">
+                                  {formatCompactCurrency(loan.principal_amount)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatDateTime(loan.start_date)} | {loan.installments} cicilan
+                                </p>
+                              </div>
+                              <Badge
+                                variant={
+                                  loan.status === "active"
+                                    ? "secondary"
+                                    : "outline"
+                                }
+                              >
+                                {loan.status === "active" ? "Aktif" : "Arsip"}
+                              </Badge>
+                            </div>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <MoneyRow
+                                label="Sisa"
+                                value={formatCompactCurrency(remaining)}
+                                tone={remaining > 0 ? "warning" : "neutral"}
+                              />
+                              <MoneyRow
+                                label="Bayar"
+                                value={formatCompactCurrency(paid)}
+                                tone="cash"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Tabungan & Aktivitas</CardTitle>
+                    <CardDescription>
+                      Saldo akun dan uang terbaru.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex max-h-[320px] flex-col gap-3 overflow-auto">
+                    {selectedCustomerInsight.item.activeSavings.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Belum ada rekening tabungan aktif.
+                      </p>
+                    ) : (
+                      selectedCustomerInsight.item.activeSavings.map((account) => {
+                        const accountBalance = savingsTransactions
+                          .filter(
+                            (transaction) =>
+                              transaction.savings_account_id === account.id
+                          )
+                          .reduce((total, transaction) => {
+                            if (isSavingsWithdrawal(transaction.type)) {
+                              return total - transaction.amount;
+                            }
+                            if (isSavingsDeposit(transaction.type)) {
+                              return total + transaction.amount;
+                            }
+                            return total;
+                          }, 0);
+
+                        return (
+                          <MoneyRow
+                            key={account.id}
+                            label={account.account_name}
+                            value={formatCompactCurrency(accountBalance)}
+                            tone="bank"
+                          />
+                        );
+                      })
+                    )}
+
+                    <Separator />
+
+                    {selectedCustomerActivities.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Belum ada aktivitas uang.
+                      </p>
+                    ) : (
+                      selectedCustomerActivities.map((activity) => (
+                        <div
+                          key={activity.id}
+                          className="flex items-start justify-between gap-3 rounded-lg border bg-background/60 px-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {activity.title}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {formatDateTime(activity.date)} | {activity.detail}
+                            </p>
+                          </div>
+                          <span
+                            className={cn(
+                              "shrink-0 text-sm font-semibold",
+                              activity.direction === "in"
+                                ? "text-[var(--pf-cash)]"
+                                : "text-[var(--pf-danger)]"
+                            )}
+                          >
+                            {activity.direction === "in" ? "+" : "-"}{" "}
+                            {formatCompactCurrency(activity.amount)}
+                          </span>
+                        </div>
                       ))
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <DialogFooter showCloseButton>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => openProfileEditor(selectedCustomerInsight.item)}
+                >
+                  <PencilLineIcon data-icon="inline-start" />
+                  Edit Nasabah
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => openPointAdjustment(selectedCustomerInsight.item)}
+                >
+                  <ArrowUpDownIcon data-icon="inline-start" />
+                  Ubah Poin
+                </Button>
+              </DialogFooter>
+            </>
           )}
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editingProfile} onOpenChange={(open) => !open && setEditingProfile(null)}>
         <DialogContent>
@@ -3087,11 +3529,11 @@ const BusinessCashCard: React.FC<{
     <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex flex-col gap-2">
         <CardDescription className="text-[11px] uppercase tracking-[0.18em]">
-          Saldo Bisnis
+          Koreksi Manual
         </CardDescription>
         <CardTitle className="text-2xl">{balance}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Gunakan form di bawah untuk koreksi manual.
+          Dipakai hanya kalau ada selisih catatan.
         </p>
       </div>
       <Button variant="secondary" size="icon" className="pointer-events-none">

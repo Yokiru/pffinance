@@ -2,6 +2,13 @@ import React, { useEffect } from "react";
 
 import AdminAccessGate from "./components/AdminAccessGate";
 
+export type Page = "dashboard" | "customers" | "savings";
+
+export type DateRange = {
+  start: Date;
+  end: Date;
+};
+
 const App: React.FC = () => {
   useEffect(() => {
     document.title = "PJFinance Admin";

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   EyeIcon,
@@ -118,9 +118,61 @@ const AdminAccessGate: React.FC = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const sessionRef = useRef<Session | null>(null);
+  const validationRunRef = useRef(0);
+
+  const applySession = (nextSession: Session | null) => {
+    sessionRef.current = nextSession;
+    setSession(nextSession);
+  };
 
   useEffect(() => {
     let active = true;
+
+    const validateAndApplySession = async (
+      nextSession: Session | null,
+      options: { keepSessionOnError?: boolean } = {}
+    ) => {
+      const runId = ++validationRunRef.current;
+
+      if (!nextSession) {
+        applySession(null);
+        return;
+      }
+
+      try {
+        const access = await checkAdminAccess(nextSession);
+
+        if (!active || runId !== validationRunRef.current) return;
+
+        if (!access.configured) {
+          await adminSupabase.auth.signOut();
+          applySession(null);
+          setErrorText("Akses admin belum siap digunakan.");
+          return;
+        }
+
+        if (!access.allowed) {
+          await adminSupabase.auth.signOut();
+          applySession(null);
+          setErrorText("Akun ini tidak punya akses ke panel admin.");
+          return;
+        }
+
+        applySession(nextSession);
+        setErrorText(null);
+      } catch (error) {
+        if (!active || runId !== validationRunRef.current) return;
+
+        if (options.keepSessionOnError || sessionRef.current) {
+          applySession(nextSession);
+          return;
+        }
+
+        applySession(null);
+        setErrorText(formatAuthError(error));
+      }
+    };
 
     const bootstrap = async () => {
       try {
@@ -133,25 +185,14 @@ const AdminAccessGate: React.FC = () => {
           return;
         }
 
-        const access = await checkAdminAccess(data.session);
-
-        if (!active) return;
-
-        if (data.session && !access.configured) {
-          await adminSupabase.auth.signOut();
-          setSession(null);
-          setErrorText("Akses admin belum siap digunakan.");
-        } else if (data.session && !access.allowed) {
-          await adminSupabase.auth.signOut();
-          setSession(null);
-          setErrorText("Akun ini tidak punya akses ke panel admin.");
-        } else {
-          setSession(data.session);
-        }
+        if (data.session) applySession(data.session);
+        await validateAndApplySession(data.session, { keepSessionOnError: true });
       } catch (error) {
         if (!active) return;
-        setSession(null);
-        setErrorText(formatAuthError(error));
+        if (!sessionRef.current) {
+          applySession(null);
+          setErrorText(formatAuthError(error));
+        }
       } finally {
         if (active) {
           setCheckingSession(false);
@@ -163,35 +204,32 @@ const AdminAccessGate: React.FC = () => {
 
     const {
       data: { subscription },
-    } = adminSupabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = adminSupabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (!active) return;
 
       try {
-        if (nextSession) {
-          const access = await checkAdminAccess(nextSession);
-
-          if (!active) return;
-
-          if (!access.configured) {
-            await adminSupabase.auth.signOut();
-            setSession(null);
-            setErrorText("Akses admin belum siap digunakan.");
-            return;
-          }
-
-          if (!access.allowed) {
-            await adminSupabase.auth.signOut();
-            setSession(null);
-            setErrorText("Akun ini tidak punya akses ke panel admin.");
-            return;
-          }
+        if (event === "SIGNED_OUT") {
+          applySession(null);
+          setCheckingSession(false);
+          return;
         }
 
-        setSession(nextSession);
+        if (!nextSession) {
+          if (event === "INITIAL_SESSION" && !sessionRef.current) {
+            applySession(null);
+          }
+          setCheckingSession(false);
+          return;
+        }
+
+        applySession(nextSession);
+        await validateAndApplySession(nextSession, { keepSessionOnError: true });
       } catch (error) {
         if (!active) return;
-        setSession(null);
-        setErrorText(formatAuthError(error));
+        if (!sessionRef.current) {
+          applySession(null);
+          setErrorText(formatAuthError(error));
+        }
       } finally {
         if (active) {
           setCheckingSession(false);
@@ -260,6 +298,7 @@ const AdminAccessGate: React.FC = () => {
       const { error } = await adminSupabase.auth.signOut();
       if (error) throw error;
       setPassword("");
+      applySession(null);
     } catch (error) {
       setErrorText(formatAuthError(error));
     } finally {
