@@ -227,13 +227,15 @@ type PriorityCustomer = {
   level: number;
 };
 
+type RiskLabel = "Aman" | "Pantau" | "Prioritas";
+
 type CustomerInsight = {
   item: ProfileViewModel;
   outstanding: number;
   paid: number;
   savingsBalance: number;
   totalPoints: number;
-  risk: "Aman" | "Pantau" | "Prioritas";
+  risk: RiskLabel;
   valueScore: number;
 };
 
@@ -498,6 +500,54 @@ const toDayKey = (value: string | Date) => {
     2,
     "0"
   )}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+const getDaysSince = (value: string) => {
+  const startDate = startOfDay(new Date(value));
+  const today = startOfDay(new Date());
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.floor((today.getTime() - startDate.getTime()) / dayMs));
+};
+
+const resolveLoanRisk = ({
+  loan,
+  target,
+  paid,
+  outstanding,
+}: {
+  loan: LoanRecord;
+  target: number;
+  paid: number;
+  outstanding: number;
+}): RiskLabel => {
+  if (loan.status !== "active" || outstanding <= 0) return "Aman";
+
+  const ageDays = getDaysSince(loan.start_date);
+  const progress = target > 0 ? paid / target : 0;
+
+  if (
+    outstanding >= 10000000 ||
+    (paid === 0 && ageDays >= 7) ||
+    (outstanding >= 5000000 && paid === 0)
+  ) {
+    return "Prioritas";
+  }
+
+  if (
+    paid === 0 ||
+    outstanding >= 3000000 ||
+    (progress <= 0.1 && ageDays >= 14)
+  ) {
+    return "Pantau";
+  }
+
+  return "Aman";
+};
+
+const resolveProfileRisk = (risks: RiskLabel[]): RiskLabel => {
+  if (risks.includes("Prioritas")) return "Prioritas";
+  if (risks.includes("Pantau")) return "Pantau";
+  return "Aman";
 };
 
 const formatDayLabel = (value: string) => {
@@ -884,7 +934,7 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
 
   const customerInsights = useMemo<CustomerInsight[]>(() => {
     return profileViewModels.map((item) => {
-      const outstanding = item.activeLoans.reduce((sum, loan) => {
+      const loanRiskSnapshots = item.activeLoans.map((loan) => {
         const target =
           (loan.installment_amount_snapshot ?? 0) * (loan.installments ?? 0);
         const paid = loanTransactions
@@ -894,20 +944,19 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
               isRepaymentTransaction(transaction.type)
           )
           .reduce((total, transaction) => total + transaction.amount, 0);
-        return sum + Math.max(target - paid, 0);
-      }, 0);
-      const paid = item.activeLoans.reduce((sum, loan) => {
-        return (
-          sum +
-          loanTransactions
-            .filter(
-              (transaction) =>
-                transaction.loan_id === loan.id &&
-                isRepaymentTransaction(transaction.type)
-            )
-            .reduce((total, transaction) => total + transaction.amount, 0)
-        );
-      }, 0);
+        const outstanding = Math.max(target - paid, 0);
+
+        return {
+          paid,
+          outstanding,
+          risk: resolveLoanRisk({ loan, target, paid, outstanding }),
+        };
+      });
+      const outstanding = loanRiskSnapshots.reduce(
+        (sum, loan) => sum + loan.outstanding,
+        0
+      );
+      const paid = loanRiskSnapshots.reduce((sum, loan) => sum + loan.paid, 0);
       const profileSavingsAccountIds = new Set(
         item.activeSavings.map((account) => account.id)
       );
@@ -927,12 +976,7 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
           return sum;
         }, 0);
       const totalPoints = item.profilePoints + item.activeLoanPoints;
-      const risk: CustomerInsight["risk"] =
-        outstanding >= 10000000
-          ? "Prioritas"
-          : outstanding > 0 && paid === 0
-          ? "Pantau"
-          : "Aman";
+      const risk = resolveProfileRisk(loanRiskSnapshots.map((loan) => loan.risk));
 
       return {
         item,
@@ -1072,6 +1116,7 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
         const expectedProfit = Math.max(target - (loan.principal_amount ?? 0), 0);
         const progress = target > 0 ? paid / target : 0;
         const profile = profileById.get(loan.profile_id);
+        const risk = resolveLoanRisk({ loan, target, paid, outstanding });
 
         return {
           loan,
@@ -1081,12 +1126,7 @@ const AdminPanelPage: React.FC<AdminPanelPageProps> = ({
           outstanding,
           expectedProfit,
           progress,
-          risk:
-            loan.status === "active" && outstanding > 0 && paid === 0
-              ? "Pantau"
-              : loan.status === "active" && outstanding >= 10000000
-              ? "Prioritas"
-              : "Aman",
+          risk,
         };
       })
       .sort((left, right) => {
