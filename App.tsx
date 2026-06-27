@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 
 import AdminAccessGate from "./components/AdminAccessGate";
+import PublicProfileStatusPage from "./components/PublicProfileStatusPage";
 
 export type Page = "dashboard" | "customers" | "savings";
 
@@ -10,6 +11,11 @@ export type DateRange = {
 };
 
 const App: React.FC = () => {
+  const statusToken =
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("status")?.trim() ?? "";
+
   useEffect(() => {
     document.title = "PJFinance Admin";
     document.documentElement.classList.add("dark");
@@ -20,6 +26,10 @@ const App: React.FC = () => {
       document.body.classList.remove("dark");
     };
   }, []);
+
+  if (statusToken) {
+    return <PublicProfileStatusPage shareToken={statusToken} />;
+  }
 
   return <AdminAccessGate />;
 };
